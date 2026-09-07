@@ -1,0 +1,837 @@
+"""deckkit — build brand-compliant decks from the bundled template.
+
+Import this, don't reinvent it. Every helper exists because doing it by hand
+loses inherited formatting (which is where all the brand styling lives).
+
+    import sys; sys.path.insert(0, "<skill>/scripts")
+    from deckkit import new_deck, add, fill, bullets, table, save
+
+    prs = new_deck()
+    s = add(prs, "Cover page")
+    fill(s, title="Project Falcon", ph11=["Commercial due diligence", "", "12 August 2026"])
+    save(prs, "out.pptx")
+"""
+
+import copy
+import os
+import re
+
+from pptx import Presentation
+from pptx.util import Inches, Cm, Pt
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE = os.path.join(HERE, "..", "assets", "template.pptx")
+
+# --- brand constants (see references/brand.md) -------------------------------
+# ---------------------------------------------------------------------------
+# Units. House standard is CENTIMETRES (set 21 Aug 2026). Reason and specify in
+# cm; the geometry table in references/brand.md is in cm. Inches remain available
+# because the template's own geometry is authored in them and python-pptx takes
+# Inches().
+CM = Cm
+IN = Inches
+
+
+def cm(v):
+    """Centimetres to EMU. Use for anything placed by hand."""
+    return Cm(v)
+
+
+def in2cm(v):
+    return v * 2.54
+
+
+def cm2in(v):
+    return v / 2.54
+
+
+# Grid guides, in centimetres. Mirrors the table in references/brand.md.
+# Read off the template's own placeholder geometry, not back-converted from the
+# inch values (corrected 21 Aug 2026: the first cm version was 0.01 low in five
+# places because it was converted from inches rather than measured).
+GRID = {
+    "slide_w": 33.87, "slide_h": 19.05,
+    "left": 2.73, "right": 31.13, "content_w": 28.40,
+    "col2_x": 17.43, "col2_w": 13.70,
+    "col3_x": (2.73, 12.28, 21.83), "col3_w": 9.30,
+    "title_y": 1.22, "title_h": 1.50,
+    "strapline_y": 2.72,
+    "content_top": 3.73, "content_bottom": 16.32,
+    "halfrow2_y": 10.13,
+    "summary_strip_y": 14.43,
+    "source_strip_y": 16.32, "source_strip_h": 1.00,
+    # The master's own marker: a red rule at 16.33 cm captioned "NO CONTENT
+    # BELOW THIS LINE UNDER ANY CIRCUMSTANCES". Everything under it is master
+    # furniture: logo, copyright block, classification, page number.
+    # Corrected 25 Aug 2026, from 17.45, which was a guess and let content sit
+    # on top of the footer.
+    "no_content_below": 16.33,
+    # The source line occupies the strip immediately above that rule, 15.72 to
+    # 16.32 cm. Content stops at the top of it, not at the rule.
+    "source_line_y": 15.72,
+}
+
+DARK_BLUE = RGBColor(0x0C, 0x23, 0x3C)
+KPMG_BLUE = RGBColor(0x00, 0x33, 0x8D)
+COBALT = RGBColor(0x1E, 0x49, 0xE2)
+PACIFIC = RGBColor(0x00, 0xB8, 0xF5)
+BLUE = RGBColor(0x76, 0xD2, 0xFF)
+LIGHT_BLUE = RGBColor(0xAC, 0xEA, 0xFF)
+BLUE_ACCENT1 = RGBColor(0xD2, 0xDB, 0xF9)
+BLUE_GRAY = RGBColor(0x34, 0x55, 0x6D)
+AQUA = RGBColor(0x77, 0xA8, 0xBE)
+LIGHT_TURQ = RGBColor(0x96, 0xCE, 0xE4)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+GREY = {1: RGBColor(0x33, 0x33, 0x33), 2: RGBColor(0x66, 0x66, 0x66),
+        3: RGBColor(0x98, 0x98, 0x98), 4: RGBColor(0xB2, 0xB2, 0xB2),
+        5: RGBColor(0xE5, 0xE5, 0xE5)}
+RAG = {"red": RGBColor(0xED, 0x21, 0x24), "amber": RGBColor(0xF1, 0xC4, 0x4D),
+       "green": RGBColor(0x26, 0x99, 0x24)}
+
+CHART_SERIES = [DARK_BLUE, LIGHT_BLUE, PACIFIC, KPMG_BLUE, BLUE_ACCENT1, BLUE]
+CHART_EXTRA = [BLUE_GRAY, AQUA, LIGHT_TURQ, GREY[5]]
+
+BODY_FONT = "Arial"
+TITLE_FONT = "KPMG Bold"
+
+
+def new_deck(template=TEMPLATE):
+    """Open the bundled template: 32 layouts, both masters, theme, logo,
+    footers and think-cell hooks intact, and zero slides.
+
+    Don't substitute the specimen deck here. Its 28 sample slides hyperlink to
+    each other, so deleting them at runtime leaves orphans that collide with the
+    partnames of the slides you add, and PowerPoint calls the result corrupt.
+    """
+
+    # Self-deploying brand fonts. The skill carries all nine faces and installs
+    # any the machine is missing, so a new device needs no setup step. Added
+    # 25 Aug 2026. Never fatal: a deck that builds in Arial with a warning
+    # beats a deck that does not build, and the render-time font probe catches
+    # the substitution.
+    try:
+        import fonts as _fonts
+        _fonts.ensure_installed()
+    except Exception:
+        pass
+    return Presentation(template)
+
+
+def layout(prs, name):
+    """Look up a layout by name on either master.
+
+    Exact match first (case and whitespace insensitive), and only then the
+    looser match that ignores the '1_' prefix PowerPoint puts on a duplicated
+    layout. The order matters: this template holds both 'Key findings_6 blocks'
+    and '1_Key findings_6 blocks', and they are different layouts with different
+    idx numbers. Normalising the prefix away first silently returns the wrong
+    one, and the content lands in the wrong boxes.
+    """
+    def tidy(s):
+        return " ".join(s.split()).lower()
+
+    def loose(s):
+        return re.sub(r"^\d+_", "", " ".join(s.split())).lower()
+
+    layouts = [l for m in prs.slide_masters for l in m.slide_layouts]
+    for match in (tidy, loose):
+        want = match(name)
+        hits = [l for l in layouts if match(l.name) == want]
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) > 1:
+            raise KeyError(
+                "%r is ambiguous — matches %s. Use the exact name."
+                % (name, [l.name for l in hits]))
+    raise KeyError("no layout %r. Available: %s"
+                   % (name, [l.name for l in layouts]))
+
+
+def add(prs, layout_name):
+    """Append a slide on the named layout."""
+    return prs.slides.add_slide(layout(prs, layout_name))
+
+
+def ph(slide, idx):
+    """Placeholder by its layout idx (the numbers in references/layouts.md)."""
+    for shape in slide.placeholders:
+        if shape.placeholder_format.idx == idx:
+            return shape
+    raise KeyError("no placeholder idx=%s on this slide; has %s" % (
+        idx, [p.placeholder_format.idx for p in slide.placeholders]))
+
+
+def _write(shape, value):
+    """Write text into a placeholder without destroying inherited style.
+
+    value may be a string, a list of strings (one paragraph each), or a list of
+    (text, level) tuples. Never assign to text_frame.text — that collapses the
+    paragraph to one unstyled run and the brand formatting goes with it.
+    """
+    tf = shape.text_frame
+    items = value if isinstance(value, (list, tuple)) else [value]
+    items = [(i, 0) if isinstance(i, str) else i for i in items]
+    for p in list(tf.paragraphs[1:]):
+        p._p.getparent().remove(p._p)
+    first = tf.paragraphs[0]
+    for r in list(first.runs):
+        r._r.getparent().remove(r._r)
+    for n, (text, lvl) in enumerate(items):
+        para = first if n == 0 else tf.add_paragraph()
+        para.level = lvl
+        if text:
+            para.add_run().text = text
+    return shape
+
+
+def fill(slide, title=None, **kw):
+    """fill(slide, title="...", ph56=[...], ph17="Source: ...")
+
+    Keys are ph<idx>; values are strings or paragraph lists. Look the idx values
+    up in references/layouts.md — they differ per layout.
+    """
+    if title is not None:
+        _write(slide.shapes.title, title)
+    for key, value in kw.items():
+        m = re.fullmatch(r"ph(\d+)", key)
+        if not m:
+            raise TypeError("fill() keys must look like ph56, got %r" % key)
+        _write(ph(slide, int(m.group(1))), value)
+    return slide
+
+
+def bullets(items, level=2):
+    """Body copy as bulleted paragraphs. Body levels 0 and 1 are unbulleted
+    (bold lead-in / plain), levels 2-4 carry the bullet glyph."""
+    return [(t, level) for t in items]
+
+
+def note(slide, text):
+    """Source / footnote line at the bottom of the content area (6pt).
+
+    Falls back to source_box() on layouts that have no idx 17 placeholder, so a
+    source line is always placeable. `Title only_Blank` is the common case: it is
+    the layout tables and hand-built exhibits go on, and it has no source slot.
+    Every data slide gets a source line, so this never silently does nothing.
+    """
+    try:
+        return _write(ph(slide, 17), text)
+    except KeyError:
+        return source_box(slide, text)
+
+
+def source_box(slide, text, top=None):
+    """Draw a brand-format source line on a layout with no idx 17 placeholder.
+
+    6pt Arial, black, left margin, full content width, sitting just above the
+    content floor. Geometry in centimetres from GRID.
+    """
+    from pptx.util import Emu
+    height = 0.6
+    top = GRID["content_bottom"] - height if top is None else top
+    box = slide.shapes.add_textbox(Cm(GRID["left"]), Cm(top),
+                                   Cm(GRID["content_w"]), Cm(height))
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    para = tf.paragraphs[0]
+    run = para.add_run()
+    run.text = text
+    run.font.name = "Arial"
+    run.font.size = Pt(6)
+    run.font.bold = False
+    run.font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+    return box
+
+
+def strapline_box(slide, text, top=None):
+    """Draw a brand-format strapline on a layout with no idx 18 placeholder.
+
+    9pt Arial bold, Pacific Blue, left margin, full content width, sitting in the
+    strapline band. Geometry in centimetres from GRID.
+    """
+    height = 0.9
+    top = GRID["strapline_y"] if top is None else top
+    box = slide.shapes.add_textbox(Cm(GRID["left"]), Cm(top),
+                                   Cm(GRID["content_w"]), Cm(height))
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    run = tf.paragraphs[0].add_run()
+    run.text = text
+    run.font.name = "Arial"
+    run.font.size = Pt(9)
+    run.font.bold = True
+    run.font.color.rgb = PACIFIC
+    return box
+
+
+def strapline(slide, text):
+    """One-line key message under the title (9pt bold Pacific Blue)."""
+    try:
+        return _write(ph(slide, 18), text)
+    except KeyError:
+        return strapline_box(slide, text)
+
+
+def rag(slide, idx, status):
+    """Recolour a traffic-light chip: rag(slide, 72, 'green').
+
+    The space matters. An empty placeholder isn't rendered at all — by
+    PowerPoint or by the PDF converter — so a chip you only recoloured would
+    silently not appear on the slide.
+    """
+    chip = ph(slide, idx)
+    chip.fill.solid()
+    chip.fill.fore_color.rgb = RAG[status]
+    _write(chip, " ")
+    return chip
+
+
+def drop(slide, *idxs):
+    """Remove placeholders the layout supplies but this slide does not use.
+
+    Added 25 August 2026, off the New Machine Economy build, where two kinds of
+    unused placeholder shipped onto rendered pages:
+
+      * the **Cover page** picture placeholder (idx 12) with no approved image,
+        which prints as a dashed empty frame across half the cover
+      * the **Key findings** layouts' red RAG chip and grey "Value" chip per
+        column, which encode nothing when the slide is not a status rating.
+        `qa.gate_rag_key` fails the red chip, and correctly: a red square that
+        means nothing is decoration
+
+    An unfilled placeholder is not free. Either fill it or take it off; this is
+    the taking-it-off half, and it is the honest one when there is no content
+    for the slot. `check()` already fails a placeholder left showing its prompt.
+    """
+    want = set(idxs)
+    for shape in list(slide.placeholders):
+        if shape.placeholder_format.idx in want:
+            shape._element.getparent().remove(shape._element)
+    return slide
+
+
+def shade(slide, *idxs, colour=None):
+    """Fill the Key findings summary strips, default Grey 5.
+
+    The master pairs each summary strip with a grey "Value" chip beside it. Take
+    the chip off with `drop()` and the strip renders as an outlined white box
+    that reads as an empty field rather than a summary. Grey 5 is the fill the
+    master already uses behind these strips, so this puts back what the chip was
+    carrying and anchors the bottom band of the page.
+    """
+    colour = GREY[5] if colour is None else colour
+    want = set(idxs)
+    for shape in slide.placeholders:
+        if shape.placeholder_format.idx in want:
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = colour
+            shape.line.fill.background()
+    return slide
+
+
+def _looks_numeric(v):
+    """True if a cell value reads as a number, so the column should right-align."""
+    t = str(v).strip().replace(",", "").replace("%", "").replace("(", "-").replace(")", "")
+    for suffix in ("bn", "m", "k", "x", "pp", "bps"):
+        if t.lower().endswith(suffix):
+            t = t[: -len(suffix)].strip()
+    if t in ("", "-", "n/a", "nil"):
+        return True
+    try:
+        float(t)
+        return True
+    except ValueError:
+        return False
+
+
+
+# 8pt Arial in a table cell: an average character is about 0.152 cm wide, a line
+# is about 0.36 cm tall, and each cell carries 0.1 cm of margin on all four
+# sides. Calibrated 25 Aug 2026 against LibreOffice renders of a live POV deck,
+# where a nominal 12 cm table grew to roughly 17 cm and ran off the slide.
+_CHAR_CM = 0.152
+_LINE_CM = 0.36
+_CELL_PAD = 0.20
+_MIN_ROW_CM = 0.62
+
+
+def table_height(rows, width, col_widths=None):
+    """Estimate the height a table will actually RENDER at, in centimetres.
+
+    PowerPoint grows a row to fit its text and reports nothing about it, so
+    `shape.height` is the height you asked for, not the height you get. Every
+    footprint check that reads `shape.top` or `shape.height` is therefore blind
+    to a table that starts on the grid and ends off the slide, which is exactly
+    what shipped on 25 August 2026: a nine-row lever table clipped its last two
+    rows and a twelve-row diligence table ran past the bottom of the page.
+
+    Deliberately approximate and deliberately pessimistic. It exists to fail a
+    slide that is too full, not to lay one out.
+    """
+    n_cols = len(rows[0])
+    widths = list(col_widths) if col_widths else [width / n_cols] * n_cols
+    total = 0.0
+    for row in rows:
+        tallest = _MIN_ROW_CM
+        for c, val in enumerate(row):
+            if c >= len(widths):
+                continue
+            usable = max(0.4, widths[c] - _CELL_PAD)
+            per_line = max(1, int(usable / _CHAR_CM))
+            text = str(val)
+            # count wrapped lines per explicit line, not on the whole string
+            lines = 0
+            for part in text.split("\n"):
+                lines += max(1, -(-len(part) // per_line))
+            tallest = max(tallest, lines * _LINE_CM + _CELL_PAD)
+        total += tallest
+    return total
+
+
+def table(slide, rows, left, top, width, height, header_rows=1, title_row=False,
+          col_widths=None, units="cm", align=None):
+    """Insert a table with brand formatting: 8pt Arial, 0.1cm cell margins,
+    dark-blue title row (white bold), light-blue header row (dark blue bold),
+    transparent body with black text.
+
+    Geometry is in CENTIMETRES by default (house standard, 21 Aug 2026). Pass
+    units="in" for the pre-2.0 behaviour. `col_widths` uses the same unit.
+
+    CHANGED IN 2.0: this used to take inches with no way to say so. A call that
+    passes inches without units="in" now produces a table about 2.5x too small.
+    Check any build script written before 21 Aug 2026 before rerunning it.
+    """
+    if units not in ("cm", "in"):
+        raise ValueError('units must be "cm" or "in"')
+
+    # Alignment. House style left-aligns text; only genuinely numeric columns
+    # right-align. Before 21 Aug 2026 this right-aligned EVERY column but the
+    # first, with no override, which mangled the Five Forces, lever-summary,
+    # precedent-deal and diligence-question tables the POV slide plan mandates.
+    n_cols_ = len(rows[0])
+    bands_ = (1 if title_row else 0) + header_rows
+    if align is None:
+        aligns = []
+        for c in range(n_cols_):
+            body = [r[c] for r in rows[bands_:] if c < len(r)]
+            numeric = bool(body) and all(_looks_numeric(v) for v in body)
+            aligns.append(PP_ALIGN.RIGHT if (c > 0 and numeric) else PP_ALIGN.LEFT)
+    else:
+        if len(align) != n_cols_:
+            raise ValueError(f"align needs {n_cols_} entries, got {len(align)}")
+        aligns = [PP_ALIGN.RIGHT if a in ("r", "right", PP_ALIGN.RIGHT)
+                  else PP_ALIGN.CENTER if a in ("c", "center", "centre", PP_ALIGN.CENTER)
+                  else PP_ALIGN.LEFT for a in align]
+    # Catch the CATASTROPHIC direction too. cm() returns EMU while this takes plain
+    # centimetres, and mixing them silently produced a table 2,880,000 cm wide that
+    # check() did not see. The module guarded the harmless direction only.
+    if units == "cm" and (width > GRID["slide_w"] * 2 or height > GRID["slide_h"] * 2):
+        raise ValueError(
+            f"table() at {width}x{height} cm is larger than the slide. These look "
+            f"like EMU. cm() returns EMU for shapes placed by hand; table() and "
+            f"chart() take plain centimetre NUMBERS. Pass {width/360000:.2f} not "
+            f"cm({width/360000:.2f}).")
+    if units == "cm" and (width < 12 or height < 2.5):
+        print(f"  WARNING: table() at {width}cm x {height}cm on a "
+              f"{GRID['content_w']}cm content width looks too small. If these are "
+              f'inch values from a pre-2.0 script, pass units="in" or convert with '
+              f"in2cm(). Heuristic, so ignore it if the table really is that narrow.")
+    if units == "cm":
+        est = table_height(rows, width, col_widths)
+        # Content stops at the top of the source strip, not at the red rule:
+        # the source line has to go somewhere and it goes there.
+        room = GRID["source_line_y"] - top
+        if est > room + 0.4:
+            raise ValueError(
+                f"table() will render about {est:.1f} cm tall in {room:.1f} cm of "
+                f"room, so roughly {est - room:.1f} cm runs into the source "
+                f"strip at y {GRID['source_line_y']} cm, and past the master's "
+                f"'no content below this line' rule at "
+                f"{GRID['no_content_below']} cm. "
+                f"PowerPoint grows rows to fit and reports nothing, so this "
+                f"cannot be seen after the fact. Split the table across two "
+                f"slides, cut words, or widen the columns carrying the longest "
+                f"text. Pass units=\"in\" only if these really are inches.")
+
+    U = Cm if units == "cm" else Inches
+    n_rows, n_cols = len(rows), len(rows[0])
+    gf = slide.shapes.add_table(n_rows, n_cols, U(left), U(top),
+                                U(width), U(height))
+    tbl = gf.table
+    tbl.first_row = False
+    tbl.horz_banding = False
+    if col_widths:
+        for i, w in enumerate(col_widths):
+            tbl.columns[i].width = U(w)
+    inset = Cm(0.1)
+    bands = (1 if title_row else 0) + header_rows
+    for r, row in enumerate(rows):
+        for c, val in enumerate(row):
+            cell = tbl.cell(r, c)
+            cell.margin_left = cell.margin_right = inset
+            cell.margin_top = cell.margin_bottom = inset
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            para = cell.text_frame.paragraphs[0]
+            for run in list(para.runs):
+                run._r.getparent().remove(run._r)
+            run = para.add_run()
+            run.text = str(val)
+            run.font.size = Pt(8)
+            run.font.name = BODY_FONT
+            if title_row and r == 0:
+                cell.fill.solid(); cell.fill.fore_color.rgb = DARK_BLUE
+                run.font.bold = True; run.font.color.rgb = WHITE
+            elif r < bands:
+                cell.fill.solid(); cell.fill.fore_color.rgb = LIGHT_BLUE
+                run.font.bold = True; run.font.color.rgb = DARK_BLUE
+            else:
+                cell.fill.background()
+                run.font.color.rgb = RGBColor(0, 0, 0)
+            para.alignment = aligns[c]
+    return tbl
+
+
+# Content-slide titles sit in a 1.50 cm (0.59") box at 44pt: exactly one line.
+# The longest title in the specimen deck ("Color palette & useful tools/buttons",
+# slide 1, on Title only_Blank)
+# is 36 characters and fits, so that's the budget.
+TITLE_CHARS = 36
+# Cover and divider titles get a 3.2"-tall box at 66pt and are *meant* to wrap
+# to two or three lines, so they only need a ceiling.
+DIVIDER_TITLE_CHARS = 66
+
+_PROMPT = re.compile(r"click to (add|edit)|insert .* here|lorem", re.I)
+
+
+def check(prs, verbose=True):
+    """Pre-flight the deck. Returns a list of problem strings.
+
+    Catches the defects that actually ship: a title long enough to wrap out of its
+    1.50cm box and collide with the strapline, a placeholder left holding the
+    layout's prompt text, an empty source or strapline slot, and, on layouts that
+    have no source or strapline placeholder at all, a content slide missing either
+    one. That last check exists because `Title only_Blank` is where tables and
+    hand-built exhibits go and it carries neither slot, which is how an exhibit
+    ships with no source line. Run this before save().
+    """
+    problems = []
+    for n, slide in enumerate(prs.slides, 1):
+        name = slide.slide_layout.name
+        big = "cover" in name.lower() or "divider" in name.lower()
+        limit = DIVIDER_TITLE_CHARS if big else TITLE_CHARS
+        title = slide.shapes.title
+        if title is not None and title.has_text_frame:
+            text = title.text_frame.text.strip()
+            if len(text) > limit:
+                problems.append(
+                    "slide %d (%s): title is %d chars, over the %d-char budget"
+                    % (n, name, len(text), limit))
+        for shape in slide.placeholders:
+            if not shape.has_text_frame:
+                continue
+            body = shape.text_frame.text.strip()
+            if _PROMPT.search(body):
+                problems.append(
+                    "slide %d (%s): placeholder idx=%s still shows prompt text"
+                    % (n, name, shape.placeholder_format.idx))
+            elif not body and shape.placeholder_format.idx in (17, 18):
+                problems.append(
+                    "slide %d (%s): idx=%s empty — %s"
+                    % (n, name, shape.placeholder_format.idx,
+                       "every data slide needs a source" if
+                       shape.placeholder_format.idx == 17 else
+                       "state the slide's argument in the strapline"))
+
+        # Layouts with no idx 17/18 (notably Title only_Blank, which is where
+        # tables and hand-built exhibits go) cannot be caught by the loop above.
+        # Check the rendered result instead: is there any source line and any
+        # strapline on the slide, placeholder or text box?
+        if not (big or "back cover" in name.lower() or "transmittal" in name.lower()):
+            idxs = {sh.placeholder_format.idx for sh in slide.placeholders}
+            texts = [sh.text_frame.text.strip() for sh in slide.shapes
+                     if sh.has_text_frame and sh.text_frame.text.strip()]
+            # A table's or chart's content is not in a shape text_frame, so count
+            # those explicitly. Missing this is why the first version of this
+            # check passed a table slide with no source line.
+            has_table_or_chart = any(getattr(sh, "has_table", False)
+                                     or getattr(sh, "has_chart", False)
+                                     or sh.shape_type == MSO_SHAPE_TYPE.PICTURE
+                                     for sh in slide.shapes)
+            has_content = has_table_or_chart or any(len(t) > 40 for t in texts)
+            if 17 not in idxs and has_content and not any(
+                    t.lower().startswith(("source:", "sources:", "note:")) for t in texts):
+                problems.append(
+                    "slide %d (%s): no source line, and this layout has no idx 17. "
+                    "Use note(), which falls back to source_box()." % (n, name))
+            has_strapline_box = any(
+                sh.has_text_frame and sh.text_frame.paragraphs
+                and sh.text_frame.paragraphs[0].runs
+                and sh.text_frame.paragraphs[0].runs[0].font.size == Pt(9)
+                and sh.text_frame.paragraphs[0].runs[0].font.bold
+                for sh in slide.shapes if not sh.is_placeholder)
+            if 18 not in idxs and has_content and not has_strapline_box:
+                problems.append(
+                    "slide %d (%s): no strapline, and this layout has no idx 18. "
+                    "Use strapline(), which falls back to strapline_box()." % (n, name))
+        # Charts. Nothing inspected these before 21 Aug 2026, so a chart with
+        # gridlines, a 24pt centred black title and 18pt axis text passed every
+        # gate in the package. Use chart(), which applies the rules; these catch
+        # a hand-built one that does not.
+        for shape in slide.shapes:
+            if not getattr(shape, "has_chart", False):
+                continue
+            ch = shape.chart
+            if ch.has_title:
+                problems.append(
+                    "slide %d (%s): chart has its own title. The slide title "
+                    "carries the finding; a second one competes with it" % (n, name))
+            try:
+                if ch.value_axis.has_major_gridlines:
+                    problems.append(
+                        "slide %d (%s): chart has gridlines, which the brand bans"
+                        % (n, name))
+            except (AttributeError, ValueError):
+                pass
+            sz = ch.font.size
+            if sz is not None and sz > Pt(10):
+                problems.append(
+                    "slide %d (%s): chart font is %.0fpt; the scale is 8pt axis "
+                    "and 6pt data labels" % (n, name, sz.pt))
+            try:
+                cats = ch.plots[0].categories
+                if len(list(cats)) > 20:
+                    problems.append(
+                        "slide %d (%s): chart has %d categories. Past about 20 it "
+                        "stops being readable at 8pt; consider small multiples or "
+                        "a table. (Raised from 12 to 20 on 25 Aug 2026: the "
+                        "published HKEX deck runs 21 sorted bars with direct "
+                        "in-bar labels and reads perfectly.)"
+                        % (n, name, len(list(cats))))
+            except (IndexError, AttributeError, ValueError):
+                pass
+
+    if verbose:
+        for p in problems:
+            print("  !", p)
+        if not problems:
+            print("  check: clean")
+    return problems
+
+
+def probe(layout_name, template=TEMPLATE):
+    """Print a layout's real placeholder map — idx, type, name, geometry.
+
+    Use this for any layout references/layouts.md doesn't cover, or to confirm
+    one it does before writing a long fill() call.
+    """
+    prs = Presentation(template)
+    lay = layout(prs, layout_name)
+    print("%s:" % lay.name)
+    for shape in sorted(lay.placeholders,
+                        key=lambda s: (s.top or 0, s.left or 0)):
+        pf = shape.placeholder_format
+        # cm is the house unit; inches shown in brackets because the template
+        # itself is authored in them.
+        print("  idx=%-4s %-12s %-26s %.2f,%.2f  %.2f x %.2f cm   (%.2f,%.2f %.2fx%.2f in)" % (
+            pf.idx, str(pf.type).split()[0].lower(), shape.name[:26],
+            (shape.left or 0) / 360000, (shape.top or 0) / 360000,
+            (shape.width or 0) / 360000, (shape.height or 0) / 360000,
+            (shape.left or 0) / 914400, (shape.top or 0) / 914400,
+            (shape.width or 0) / 914400, (shape.height or 0) / 914400))
+
+
+# ---------------------------------------------------------------------------
+# Charts. Added 21 Aug 2026, because native PowerPoint charts were mandatory in
+# references/pov-deck.md and this module had no way to make one. An execution
+# dry-run built a deck whose chart carried gridlines, a 24pt centred black title
+# and 18pt axis text, and every automated gate in the package passed it, because
+# nothing inspected charts. chart() bakes in the four brand rules; check() now
+# tests them.
+
+CHART_KINDS = {
+    "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "column_stacked": XL_CHART_TYPE.COLUMN_STACKED,
+    "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+    "line": XL_CHART_TYPE.LINE,
+    "line_markers": XL_CHART_TYPE.LINE_MARKERS,
+    "scatter": XL_CHART_TYPE.XY_SCATTER,
+}
+
+
+def _infer_format(series):
+    """Pick a number format that does not silently drop precision.
+
+    Defaulting to '#,##0' rounds 4.1 to "4" on the data label, which misreports
+    the number in a client deliverable. Caught on the first rendered test.
+    """
+    vals = [v for _, vs in series for v in vs if isinstance(v, (int, float))]
+    if not vals:
+        return 'General'
+    if all(float(v).is_integer() for v in vals):
+        return '#,##0'
+    span = max(abs(v) for v in vals)
+    if span < 10:
+        return '#,##0.00'
+    return '#,##0.0'
+
+
+def chart(slide, kind, categories, series, left, top, width, height,
+          units="cm", number_format=None, data_labels=True, legend=None,
+          colours=None, gap_width=60):
+    """Insert a brand-formatted native PowerPoint chart. Never an image.
+
+    kind        one of CHART_KINDS: column, column_stacked, bar, line,
+                line_markers, scatter
+    categories  list of category labels (the x axis)
+    series      list of (name, [values]) tuples. Use None for a gap in a line.
+    geometry    left/top/width/height in CENTIMETRES by default (units="in" for
+                inches). Take them from GRID.
+    legend      None = automatic (shown only when there is more than one series)
+    number_format  None = inferred from the data so precision is not dropped.
+                Pass an explicit format ('0.0%', '#,##0') when you want one.
+
+    Applies, per references/brand.md and references/design-principles.md:
+      * no gridlines, no chart border, white plot area
+      * Arial throughout: 8pt axis and category labels, 6pt data labels
+      * CHART_SERIES colours in order, or pass `colours` to accent one series
+      * no chart title: the slide title carries the finding, and a second title
+        inside the chart competes with it
+      * value axis starting at zero on any bar or column chart, because bars
+        encode length and a truncated baseline lies about the difference
+    """
+    if kind not in CHART_KINDS:
+        raise ValueError(f"kind must be one of {sorted(CHART_KINDS)}, got {kind!r}")
+    if units == "cm" and (width > GRID["slide_w"] * 2 or height > GRID["slide_h"] * 2):
+        raise ValueError(
+            f"chart() at {width}x{height} cm is larger than the slide. These look "
+            f"like EMU: cm() returns EMU, chart() takes plain centimetre numbers.")
+    U = Cm if units == "cm" else Inches
+
+    if number_format is None:
+        number_format = _infer_format(series)
+
+    cd = CategoryChartData()
+    cd.categories = list(categories)
+    for name, values in series:
+        cd.add_series(str(name), tuple(values), number_format)
+
+    gf = slide.shapes.add_chart(CHART_KINDS[kind], U(left), U(top),
+                                U(width), U(height), cd)
+    ch = gf.chart
+
+    ch.font.name = BODY_FONT
+    ch.font.size = Pt(8)
+    ch.font.color.rgb = GREY[1]
+
+    ch.has_title = False
+
+    show_legend = (len(series) > 1) if legend is None else bool(legend)
+    ch.has_legend = show_legend
+    if show_legend:
+        ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+        ch.legend.include_in_layout = False
+        ch.legend.font.size = Pt(8)
+        ch.legend.font.name = BODY_FONT
+
+    palette = list(colours) if colours else list(CHART_SERIES)
+    for i, plot_series in enumerate(ch.series):
+        col = palette[i % len(palette)]
+        if kind.startswith(("line", "scatter")):
+            plot_series.format.line.color.rgb = col
+            plot_series.format.line.width = Pt(2.25)
+        else:
+            plot_series.format.fill.solid()
+            plot_series.format.fill.fore_color.rgb = col
+
+    try:
+        plot = ch.plots[0]
+        if not kind.startswith(("line", "scatter")):
+            plot.gap_width = gap_width
+        plot.has_data_labels = bool(data_labels)
+        if data_labels:
+            dl = plot.data_labels
+            dl.font.size = Pt(6)
+            dl.font.name = BODY_FONT
+            dl.font.color.rgb = GREY[1]
+            dl.number_format = number_format
+            dl.number_format_is_linked = False
+    except (IndexError, ValueError):
+        pass
+
+    for axis in (ch.value_axis, ch.category_axis):
+        try:
+            axis.has_major_gridlines = False
+            axis.has_minor_gridlines = False
+            axis.format.line.color.rgb = GREY[4]
+            axis.tick_labels.font.size = Pt(8)
+            axis.tick_labels.font.name = BODY_FONT
+            axis.tick_labels.font.color.rgb = GREY[1]
+        except (AttributeError, ValueError):
+            pass
+
+    # Bars encode length: a truncated baseline lies about the difference.
+    if not kind.startswith(("line", "scatter")):
+        try:
+            vals = [v for _, vs in series for v in vs if v is not None]
+            if vals and min(vals) >= 0:
+                ch.value_axis.minimum_scale = 0
+        except (AttributeError, ValueError):
+            pass
+
+    return ch
+
+
+def chart_from_data(slide, rows, chart_id, left, top, width, height, **kw):
+    """Build a chart straight from Chart_Data booklet rows.
+
+    rows: iterable of dicts with at least Chart_ID, Series, Category, Value.
+    Filters to `chart_id`, preserves first-seen order for both categories and
+    series, and hands the rest to chart(). This is the path the skill mandates:
+    no chart is drawn from a number that is not in the booklet.
+    """
+    picked = [r for r in rows if str(r.get("Chart_ID", "")).strip() == str(chart_id)]
+    if not picked:
+        raise ValueError(f"no Chart_Data rows for Chart_ID {chart_id!r}")
+    cats, names = [], []
+    for r in picked:
+        c, n = r.get("Category"), r.get("Series")
+        if c not in cats:
+            cats.append(c)
+        if n not in names:
+            names.append(n)
+    table_ = {(r.get("Series"), r.get("Category")): r.get("Value") for r in picked}
+    series = [(n, [table_.get((n, c)) for c in cats]) for n in names]
+    return chart(slide, kw.pop("kind", "column"), cats, series,
+                 left, top, width, height, **kw)
+
+
+def save(prs, path, verify=True):
+    """Save the deck. `verify=True` now GATES: it raises on any check() finding.
+
+    CHANGED 24 Aug 2026, breaking. It used to call check(), print the findings and
+    save regardless, so a deck with a missing source line or an over-long title
+    saved clean and the word "verify" meant nothing. A reviewer saved a deck with
+    two live problems reported and got a file back.
+
+      verify=True    print findings and RAISE if any (default)
+      verify="warn"  print findings and save anyway (the old behaviour)
+      verify=False   skip the check entirely
+
+    Use "warn" for a deliberate work-in-progress save, never for a deliverable.
+    """
+    if verify:
+        problems = check(prs)
+        if problems and verify != "warn":
+            raise ValueError(
+                "%d QA problem(s). Fix them, or pass verify=\"warn\" for a "
+                "work-in-progress save:\n  - %s"
+                % (len(problems), "\n  - ".join(problems)))
+    prs.save(path)
+    return path

@@ -1,0 +1,1809 @@
+"""KPMG data-exhibit engine.
+
+Added 25 August 2026. `deckkit` fills the Diligence+ master's placeholders;
+this module builds the *exhibits* that KPMG's published thought leadership
+actually runs on. Every function here is additive: nothing in `deckkit` changes
+behaviour because this file exists.
+
+The grammar is lifted from three published KPMG decks, read page by page:
+"Splintering supply chains", "Hong Kong: the capital allocator's market" and
+"Virtual assets: 2025 review and 2026 outlook". In all three, an exhibit is
+never a bare chart. It is always five parts, in this order:
+
+    1. EXHIBIT TITLE   the finding, bold, 10pt, KPMG Blue, left aligned
+    2. BASIS LINE      period, units, scope, which axis carries what, 8pt grey
+    3. THE PLOT        no gridlines, no chart title, direct labels on the marks
+    4. THE KEY         adjacent to the data, in words, whenever colour encodes
+    5. SOURCE          named, specific, beneath
+
+`exhibit_head()` draws 1 and 2 and hands back the y the plot starts at.
+`chart_exhibit()` does all five in one call. Everything is in CENTIMETRES.
+
+Geometry is in cm throughout (house standard, 21 Aug 2026), per the reviewer's
+note of 25 Aug 2026 that positions and shape sizes must be set in cm.
+"""
+import re
+
+from pptx.chart.data import CategoryChartData, BubbleChartData
+from pptx.dml.color import RGBColor
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_TICK_MARK
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.util import Cm, Pt, Emu
+
+from deckkit import (GRID, CM, DARK_BLUE, KPMG_BLUE, COBALT, PACIFIC, BLUE,
+                     LIGHT_BLUE, BLUE_ACCENT1, BLUE_GRAY, AQUA, LIGHT_TURQ,
+                     WHITE, GREY, RAG, CHART_SERIES, CHART_EXTRA, BODY_FONT,
+                     _infer_format)
+
+# ---------------------------------------------------------------------------
+# Type scale. These come from the house-style QRG, not from taste.
+#   chart title   Arial 10pt bold KPMG Blue, left aligned
+#   graph text    8pt black
+#   data labels   6pt
+#   legend        7pt black, bottom, only when more than one series
+# The QRG's "chart title" is drawn as a text box ABOVE the plot rather than as
+# the chart's own title, because a chart title object competes with the 44pt
+# slide title. That is exactly what the published decks do.
+# ---------------------------------------------------------------------------
+EXHIBIT_TITLE_PT = 10
+BASIS_PT = 8
+AXIS_PT = 8
+DATA_LABEL_PT = 6
+LEGEND_PT = 7
+PANEL_TITLE_PT = 9
+
+# DEFAULT GEOMETRY: the master's own two-column split.
+#
+# Corrected 25 August 2026 on house instruction: "graphs should generally be
+# aligned to the left margins and at 13.7cm wide situationally. Do not take
+# into account ROIC article formatting every time. The standard should still be
+# the standard."
+#
+# An earlier version defaulted to the geometry measured off the published
+# thought-leadership pages, which is a publication grid, not this master's. The
+# master gives a 13.70 cm column at the left margin and a second at 17.43, and
+# that is what a chart sits on unless there is a reason for it not to. Charts
+# align left; they do not float.
+TL = {
+    "plot_x": GRID["left"],        # 2.73
+    "plot_w": GRID["col2_w"],      # 13.70, the master's column
+    "read_x": GRID["col2_x"],      # 17.43
+    "read_w": GRID["col2_w"],      # 13.70
+    "gutter": 1.00,                # the master's own two-column gutter
+}
+
+# SITUATIONAL: the wide split the published TL pages use, for an exhibit that
+# genuinely cannot be read at 13.70 cm — a long time series, twenty-plus
+# sorted bars, a scatter needing range. Pass these explicitly; never by default.
+TL_WIDE = {
+    "plot_x": 2.73, "plot_w": 20.40,
+    "read_x": 23.93, "read_w": 7.20,
+    "gutter": 0.80,
+}
+
+# Full content width, for a table or a hero exhibit with the read beneath it.
+TL_FULL = {
+    "plot_x": GRID["left"], "plot_w": GRID["content_w"],
+}
+
+# Ordered blue ramp for an ENCODED sequence (Q1..Q4, small to large, old to
+# new). Distinct from CHART_SERIES, which is for unordered categories.
+SEQ_BLUE = [DARK_BLUE, KPMG_BLUE, COBALT, BLUE, LIGHT_BLUE, BLUE_ACCENT1]
+
+# One focal accent, for the single mark the reader must look at. Never more
+# than one focal colour on a chart.
+FOCAL = PACIFIC
+MUTED = GREY[4]
+
+CHART_KINDS_EXTRA = {
+    "column_stacked_100": XL_CHART_TYPE.COLUMN_STACKED_100,
+    "bar_stacked": XL_CHART_TYPE.BAR_STACKED,
+    "bar_stacked_100": XL_CHART_TYPE.BAR_STACKED_100,
+    "area": XL_CHART_TYPE.AREA,
+    "area_stacked": XL_CHART_TYPE.AREA_STACKED,
+    "area_stacked_100": XL_CHART_TYPE.AREA_STACKED_100,
+    "radar": XL_CHART_TYPE.RADAR,
+}
+
+# Every exhibit built through this module registers itself here so the data
+# booklet can be written from the deck rather than maintained beside it, and so
+# check_exhibits() can prove no chart was drawn from a number that is not in
+# the booklet. House instruction, 25 Aug 2026: all graphs created should
+# link to the accompanying databooklet.
+REGISTRY = []
+
+
+def reset_registry():
+    del REGISTRY[:]
+
+
+def _slide_number(slide):
+    try:
+        prs_part = slide.part.package.presentation_part
+        for n, s in enumerate(prs_part.presentation.slides, 1):
+            if s.slide_id == slide.slide_id:
+                return n
+    except Exception:
+        pass
+    return None
+
+
+def _slug(text, n=48):
+    s = re.sub(r"[^A-Za-z0-9]+", "_", str(text)).strip("_")
+    return s[:n].upper() or "EXHIBIT"
+
+
+def _find(chart_id):
+    for ex in REGISTRY:
+        if ex["Chart_ID"] == chart_id:
+            return ex
+    return None
+
+
+def register(slide, chart_id, title, basis, source, categories, series,
+             kind="column", units=None, panel=None):
+    """Record an exhibit's numbers so the booklet can be written from them."""
+    existing = _find(chart_id)
+    src = source or (existing or {}).get("Source", "")
+    rows = []
+    for name, values in series:
+        label = f"{panel} \u2014 {name}" if panel else name
+        for cat, val in zip(categories, values):
+            rows.append({
+                "Chart_ID": chart_id, "Series": label, "Category": cat,
+                "Value": val, "Units": units or "", "Source": src,
+            })
+    if existing is not None:
+        existing["Rows"].extend(rows)
+        existing["Panels"] = existing.get("Panels", []) + ([panel] if panel else [])
+        return chart_id
+    REGISTRY.append({
+        "Chart_ID": chart_id, "Slide": _slide_number(slide), "Kind": kind,
+        "Title": title, "Basis": basis or "", "Source": source or "",
+        "Units": units or "", "Rows": rows,
+    })
+    return chart_id
+
+
+# ---------------------------------------------------------------------------
+# Exhibit furniture
+# ---------------------------------------------------------------------------
+
+def _textbox(slide, text, left, top, width, height, size, *, bold=False,
+             colour=DARK_BLUE, italic=False, align=PP_ALIGN.LEFT, name=None,
+             anchor=MSO_ANCHOR.TOP, space_after=0):
+    box = slide.shapes.add_textbox(CM(left), CM(top), CM(width), CM(height))
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    tf.vertical_anchor = anchor
+    items = text if isinstance(text, (list, tuple)) else [text]
+    for n, line in enumerate(items):
+        para = tf.paragraphs[0] if n == 0 else tf.add_paragraph()
+        para.alignment = align
+        para.space_after = Pt(space_after)
+        run = para.add_run()
+        run.text = line
+        run.font.name = BODY_FONT
+        run.font.size = Pt(size)
+        run.font.bold = bold
+        run.font.italic = italic
+        run.font.color.rgb = colour
+    if name:
+        box.name = name
+    return box
+
+
+# Average advance width as a fraction of point size, Arial. Calibrated against
+# rendered output rather than guessed: a 10pt bold title at 13.70 cm holds
+# about 74 characters before it wraps.
+_ADVANCE = {False: 0.500, True: 0.530}
+
+
+def est_lines(text, width_cm, size_pt, bold=False):
+    """How many lines this text will wrap to in a box of the given width.
+
+    Text overflow is invisible to a geometric overlap check, because the shape
+    rectangle does not grow: the text simply prints outside it and over
+    whatever is beneath. That is how a two-line exhibit title came to overprint
+    its own basis line. Estimating the wrap is the only way to catch it.
+    """
+    if not text:
+        return 0
+    char_cm = _ADVANCE[bool(bold)] * size_pt * 2.54 / 72.0
+    per_line = max(int(width_cm / char_cm), 1)
+    lines = 0
+    for para in str(text).split("\n"):
+        lines += max(1, -(-len(para) // per_line))
+    return lines
+
+
+def est_text_height(text, width_cm, size_pt, bold=False, leading=1.18):
+    """Estimated rendered height in centimetres."""
+    line_cm = size_pt * 2.54 / 72.0 * leading
+    return est_lines(text, width_cm, size_pt, bold) * line_cm
+
+
+def exhibit_head(slide, title, basis=None, left=None, top=None, width=None):
+    """Exhibit title (the finding) and basis line (period, units, scope).
+
+    Returns the y in cm at which the plot should start. This is the single
+    most load-bearing function in the module: an exhibit without a stated
+    basis is a chart the reader cannot check, and an exhibit titled with a
+    noun is a chart with no argument.
+    """
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+
+    # Size both boxes to the height the text will actually render at. A fixed
+    # 0.50 cm title box printed its second line straight over the basis line
+    # whenever the title wrapped, which the geometric overlap gate cannot see.
+    t_h = max(0.50, est_text_height(title, width, EXHIBIT_TITLE_PT, bold=True)
+              + 0.06)
+    _textbox(slide, title, left, top, width, t_h, EXHIBIT_TITLE_PT,
+             bold=True, colour=KPMG_BLUE, name="EXHIBIT_TITLE")
+    y = top + t_h
+    if basis:
+        b_h = max(0.42, est_text_height(basis, width, BASIS_PT) + 0.06)
+        _textbox(slide, basis, left, y, width, b_h, BASIS_PT,
+                 colour=GREY[1], name="EXHIBIT_BASIS")
+        y += b_h + 0.04
+    return y + 0.18
+
+
+def multiples_head(slide, *, group_id, title, basis, source=None, units=None,
+                   left=None, top=None, width=None):
+    """Open a small-multiples row: one title, one basis, one booklet entry.
+
+    Panels share a scale, a key and a source, so they share one exhibit
+    identity too. Each panel then calls chart_exhibit(group=group_id,
+    panel="<panel name>") and its numbers merge into this entry rather than
+    inventing an unsourced exhibit of its own.
+    """
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+    y = exhibit_head(slide, title, basis, left, top, width)
+    if _find(group_id) is None:
+        REGISTRY.append({
+            "Chart_ID": group_id, "Slide": _slide_number(slide),
+            "Kind": "small_multiples", "Title": title, "Basis": basis or "",
+            "Source": source or "", "Units": units or "", "Rows": [],
+            "Panels": [],
+        })
+    return y
+
+
+def key(slide, entries, left=None, top=None, *, swatch=0.26, gap=0.55,
+        size=LEGEND_PT):
+    """One shared key for a row of panels, in words, beside the data.
+
+    `entries` is a list of (label, colour). Small multiples get one key for
+    the row, never one per panel: a key repeated three times is three chances
+    to read it differently.
+    """
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    x = left
+    for label, colour in entries:
+        box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, CM(x), CM(top + 0.06),
+                                     CM(swatch), CM(swatch))
+        box.fill.solid()
+        box.fill.fore_color.rgb = colour
+        box.line.fill.background()
+        box.shadow.inherit = False
+        box.name = "EXHIBIT_KEY"
+        # Size the label box to the space actually reserved for it. A fixed
+        # 6 cm box meant every entry after the first sat inside its
+        # neighbour's rectangle, which reads as one run-on legend.
+        text_w = max(1.5, 0.185 * len(label) * size / 7.0)
+        _textbox(slide, label, x + swatch + 0.16, top, text_w, 0.42, size,
+                 colour=RGBColor(0, 0, 0), name="EXHIBIT_KEY")
+        x += swatch + 0.16 + text_w + gap
+    return top + 0.50
+
+
+def panel_title(slide, text, left, top, width):
+    """Centred title over one panel of a small-multiples row."""
+    return _textbox(slide, text, left, top, width, 0.42, PANEL_TITLE_PT,
+                    bold=True, colour=DARK_BLUE, align=PP_ALIGN.CENTER,
+                    name="PANEL_TITLE")
+
+
+def commentary(slide, paragraphs, *, left=None, top=None, width=None,
+               height=None, heading=None):
+    """The prose read beside a dominant exhibit.
+
+    Published KPMG TL uses short prose paragraphs here, not bullets. Deck
+    house style still applies: no terminal full stop on a body paragraph.
+    """
+    left = TL["read_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["read_w"] if width is None else width
+    height = (GRID["content_bottom"] - 0.7 - top) if height is None else height
+    y = top
+    if heading:
+        header_bar(slide, heading, left, y, width)
+        y += 0.61 + 0.18
+        height -= 0.79
+    return _textbox(slide, list(paragraphs), left, y, width, height, 9,
+                    colour=DARK_BLUE, name="COMMENTARY", space_after=6)
+
+
+def header_bar(slide, text, left, top, width, height=0.61, fill=DARK_BLUE):
+    """The master's dark-blue block header, drawn by hand off-placeholder."""
+    box = slide.shapes.add_textbox(CM(left), CM(top), CM(width), CM(height))
+    box.fill.solid()
+    box.fill.fore_color.rgb = fill
+    box.line.fill.background()
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = Cm(0.15)
+    tf.margin_top = tf.margin_bottom = 0
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    run = tf.paragraphs[0].add_run()
+    run.text = text
+    run.font.name = BODY_FONT
+    run.font.size = Pt(9)
+    run.font.bold = True
+    run.font.color.rgb = WHITE
+    box.name = "HEADER_BAR"
+    return box
+
+
+# ---------------------------------------------------------------------------
+# Charts
+# ---------------------------------------------------------------------------
+
+def _style_axis(axis, *, labels=True, line=True):
+    try:
+        axis.has_major_gridlines = False
+        axis.has_minor_gridlines = False
+        axis.major_tick_mark = XL_TICK_MARK.NONE
+        axis.minor_tick_mark = XL_TICK_MARK.NONE
+        if line:
+            axis.format.line.color.rgb = GREY[4]
+            axis.format.line.width = Pt(0.75)
+        else:
+            axis.format.line.fill.background()
+        axis.has_title = False
+        axis.tick_labels.font.size = Pt(AXIS_PT)
+        axis.tick_labels.font.name = BODY_FONT
+        axis.tick_labels.font.color.rgb = GREY[1]
+        if not labels:
+            from pptx.enum.chart import XL_TICK_LABEL_POSITION
+            axis.tick_label_position = XL_TICK_LABEL_POSITION.NONE
+    except (AttributeError, ValueError):
+        pass
+
+
+def label_every(chart, n, *, marks=True):
+    """Print every nth category label, keeping every category in the data.
+
+    Added 26 August 2026, and it replaces a mistake. A long series needs most of
+    its axis labels suppressed, and the first attempt did that by substituting
+    runs of zero-width spaces for the category names. The axis looked right and
+    **the embedded workbook was wrong**: open Edit Data in PowerPoint and the
+    category column reads as blank cells instead of "Q3 2021" and "2025-09-08".
+    A chart is only an Excel graph if its data is the real data.
+
+    `c:tickLblSkip` is the native mechanism and costs nothing: the categories
+    stay intact in the sheet, in the booklet and in the chart XML, and only the
+    drawing of the labels is thinned. House note, 26 August 2026: charts should be
+    Excel graphs, not pictures, which applies to what is inside them too.
+
+    `n` is the interval, so 4 on a quarterly series prints one label a year.
+    """
+    from pptx.oxml.ns import qn
+    ax = chart.category_axis._element
+    # CT_CatAx is a strict sequence and PowerPoint enforces it:
+    #   ... lblAlgn, lblOffset, tickLblSkip, tickMarkSkip, noMultiLvlLbl
+    # Inserting both with addnext after lblOffset reverses them, which is what
+    # the first version of this did. LibreOffice ignores both elements either
+    # way, so the render cannot catch it; the schema validator can.
+    for tag in (qn("c:tickMarkSkip"), qn("c:tickLblSkip")):
+        for existing in ax.findall(tag):
+            ax.remove(existing)
+    ref = ax.find(qn("c:lblOffset"))
+    for tag, on in ((qn("c:tickMarkSkip"), marks), (qn("c:tickLblSkip"), True)):
+        if not on:
+            continue
+        el = ax.makeelement(tag, {"val": str(int(n))})
+        if ref is not None:
+            ref.addnext(el)          # each insert pushes the previous one right
+        else:
+            ax.append(el)
+    return chart
+
+
+def _style_chart(ch, *, legend, legend_position, number_format, data_labels,
+                 colours, series_defs, kind, label_position=None):
+    ch.font.name = BODY_FONT
+    ch.font.size = Pt(AXIS_PT)
+    ch.font.color.rgb = GREY[1]
+    ch.has_title = False
+
+    show_legend = (len(series_defs) > 1) if legend is None else bool(legend)
+    ch.has_legend = show_legend
+    if show_legend:
+        pos = {"bottom": XL_LEGEND_POSITION.BOTTOM,
+               "top": XL_LEGEND_POSITION.TOP,
+               "right": XL_LEGEND_POSITION.RIGHT}[legend_position]
+        ch.legend.position = pos
+        ch.legend.include_in_layout = False
+        ch.legend.font.size = Pt(LEGEND_PT)
+        ch.legend.font.name = BODY_FONT
+        ch.legend.font.color.rgb = RGBColor(0, 0, 0)
+
+    palette = list(colours) if colours else list(CHART_SERIES)
+
+    # focal() returns a PER-POINT palette, one colour per category, for a chart
+    # where exactly one bar is the point. Without this branch that list was read
+    # as a per-series palette, so palette[0] painted the whole series and every
+    # bar came out accented: colour everywhere, which is the thing focal() exists
+    # to prevent. Wired 26 Aug 2026, after it rendered that way on a real deck.
+    # The test is unambiguous: one series, a palette as long as the category
+    # list, and a chart type whose points are bars or columns.
+    n_cats = len(series_defs[0][1]) if series_defs else 0
+    if (colours and len(list(ch.series)) == 1 and n_cats > 1
+            and len(palette) == n_cats
+            and not kind.startswith(("line", "scatter", "radar"))):
+        _point_colours(ch, palette)
+    else:
+        for i, ser in enumerate(ch.series):
+            col = palette[i % len(palette)]
+            if kind.startswith(("line", "scatter")):
+                ser.format.line.color.rgb = col
+                ser.format.line.width = Pt(2.25)
+            else:
+                ser.format.fill.solid()
+                ser.format.fill.fore_color.rgb = col
+                ser.format.line.fill.background()
+
+    try:
+        plot = ch.plots[0]
+        plot.has_data_labels = bool(data_labels)
+        if data_labels:
+            dl = plot.data_labels
+            dl.font.size = Pt(DATA_LABEL_PT)
+            dl.font.name = BODY_FONT
+            dl.font.color.rgb = GREY[1]
+            dl.number_format = number_format
+            dl.number_format_is_linked = False
+            if label_position:
+                # On a line chart the default centres labels ON the line, so
+                # the series draws straight through its own numbers.
+                from pptx.enum.chart import XL_LABEL_POSITION
+                try:
+                    dl.position = getattr(XL_LABEL_POSITION,
+                                          label_position.upper())
+                except (AttributeError, ValueError):
+                    pass
+    except (IndexError, ValueError):
+        pass
+    return ch
+
+
+def chart_exhibit(slide, kind, categories, series, *, title, basis=None,
+                  source=None, chart_id=None, units=None,
+                  left=None, top=None, width=None, height=None,
+                  number_format=None, data_labels=True, legend=None,
+                  legend_position="bottom", colours=None, gap_width=60,
+                  register_data=True, group=None, panel=None,
+                  value_labels=True, draw_source=True, plot_rect=None,
+                  vmin=None, vmax=None, slot=None, label_position=None):
+    """A complete exhibit: title, basis, plot, key, and a booklet entry.
+
+    This is the call to reach for. It is the shape every data page in KPMG's
+    published thought leadership takes, and it makes the five-part grammar
+    impossible to forget, because you cannot build the plot without passing
+    the title and the basis.
+    """
+    from deckkit import CHART_KINDS
+    kinds = dict(CHART_KINDS)
+    kinds.update(CHART_KINDS_EXTRA)
+    if kind not in kinds:
+        raise ValueError(f"kind must be one of {sorted(kinds)}, got {kind!r}")
+
+    # NB the `slot` parameter shadows the module-level slot() function here,
+    # so the rectangle is looked up through globals() rather than by name.
+    _slot_rect = None
+    if slot is not None:
+        _slot_rect = globals()["slot"](slot)
+        left, top, width, height = slot_geometry(
+            slot, head=True, source=bool(source) and draw_source)
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+
+    plot_top = (top if group else
+                exhibit_head(slide, title, basis, left, top, width))
+    source_h = 0.70 if (source and draw_source) else 0.0
+    if height is None:
+        height = GRID["content_bottom"] - source_h - 0.20 - plot_top
+    elif _slot_rect is not None:
+        # slot_geometry() subtracts a FIXED head height, but exhibit_head()
+        # grows when the title or the basis line wraps, which they do in a
+        # quarter-width slot. The plot then started lower than the geometry
+        # assumed and ran out of the bottom of the slot, and on a bottom slot
+        # that means off the page. Re-derive the height from where the head
+        # actually ended. Fixed 26 Aug 2026, off a bar exhibit whose 99-character
+        # basis line wrapped at 13.70 cm and pushed the plot 0.31 cm past the
+        # content floor.
+        _sy, _sh = _slot_rect[1], _slot_rect[3]
+        height = round(_sy + _sh - source_h - plot_top, 2)
+        if height < 1.5:
+            raise ValueError(
+                f"exhibit {chart_id or title!r} has no room left in slot "
+                f"{slot!r}: the title and basis take {plot_top - _sy:.2f} cm of "
+                f"{_sh:.2f} cm. Shorten the basis line, or move the exhibit to "
+                f"a taller slot.")
+
+    if number_format is None:
+        number_format = _infer_format(series)
+
+    cd = CategoryChartData()
+    cd.categories = list(categories)
+    for name, values in series:
+        cd.add_series(str(name), tuple(values), number_format)
+
+    gf = slide.shapes.add_chart(kinds[kind], CM(left), CM(plot_top),
+                                CM(width), CM(height), cd)
+    ch = gf.chart
+    _style_chart(ch, legend=legend, legend_position=legend_position,
+                 number_format=number_format, data_labels=data_labels,
+                 colours=colours, series_defs=series, kind=kind,
+                 label_position=label_position)
+
+    if not kind.startswith(("line", "scatter", "radar")):
+        try:
+            ch.plots[0].gap_width = gap_width
+        except (IndexError, ValueError):
+            pass
+    _style_axis(ch.value_axis, labels=value_labels, line=value_labels)
+    _style_axis(ch.category_axis)
+    if plot_rect is not None:
+        _manual_plot(ch, *plot_rect)
+    for attr, val in (("minimum_scale", vmin), ("maximum_scale", vmax)):
+        if val is not None:
+            try:
+                setattr(ch.value_axis, attr, val)
+            except (AttributeError, ValueError):
+                pass
+
+    # Bars encode length. A truncated baseline lies about the difference.
+    if not kind.startswith(("line", "scatter", "radar")) and "100" not in kind:
+        try:
+            vals = [v for _, vs in series for v in vs if v is not None]
+            if vals and min(vals) >= 0:
+                ch.value_axis.minimum_scale = 0
+        except (AttributeError, ValueError):
+            pass
+
+    if source and draw_source:
+        exhibit_source(slide, source)
+
+    if register_data:
+        cid = group or chart_id or _slug(title)
+        register(slide, cid, title, basis, source, categories, series,
+                 kind=kind, units=units, panel=panel)
+        gf.name = (f"EXHIBIT::{cid}#{panel or len(_find(cid)['Rows'])}"
+                   if group else f"EXHIBIT::{cid}")
+    return ch
+
+
+def exhibit_source(slide, text, left=None, top=None, width=None):
+    """The source line, on the master's own source strip.
+
+    Corrected 25 August 2026. This used to sit at `content_bottom - 0.60`, or
+    wherever an exhibit happened to end, which left it floating in mid-slide
+    with a dead band beneath it and put it in a different place on every page.
+
+    The master already answers the question: placeholder idx 17 sits at
+    y 16.32 cm, which is the source strip. A hand-built slide's source belongs
+    on the same line, so that a `Title only_Blank` page and an `Analysis_*`
+    page put their sources in exactly the same place.
+
+    Pass `top` explicitly only for the upper exhibit of a stacked pair, and
+    prefer `draw_source=False` there so the pair shares one source line.
+    """
+    left = GRID["left"] if left is None else left
+    width = GRID["content_w"] if width is None else width
+    top = GRID["source_strip_y"] if top is None else top
+    return _textbox(slide, text, left, top, width,
+                    GRID["source_strip_h"], 6,
+                    colour=RGBColor(0, 0, 0), name="EXHIBIT_SOURCE")
+
+
+def combo_exhibit(slide, categories, column_series, marker_series, *, title,
+                  basis, source=None, chart_id=None, left=None, top=None,
+                  width=None, height=None, column_format="#,##0",
+                  marker_format="0.0%", colours=None, legend_position="bottom",
+                  register_data=True, draw_source=True, plot_rect=None,
+                  slot=None):
+    """Columns on the left axis, a marker series on the right axis.
+
+    The one sanctioned exception to the no-dual-axis rule, because KPMG's own
+    published work uses it and uses it correctly: two genuinely different
+    units, the second series drawn as detached markers rather than a line so
+    it cannot be read as a trend, and BOTH units named in the basis line. If
+    the basis line does not say which axis carries what, do not use this.
+    """
+    if "LHS" not in basis and "RHS" not in basis:
+        raise ValueError(
+            "combo_exhibit needs a basis line naming both axes, e.g. "
+            "'2018-2025, USD billion (column, LHS) and % (dot, RHS)'")
+
+    if slot is not None:
+        left, top, width, height = slot_geometry(
+            slot, head=True, source=bool(source) and draw_source)
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+    plot_top = exhibit_head(slide, title, basis, left, top, width)
+    source_h = 0.70 if (source and draw_source) else 0.0
+    if height is None:
+        height = GRID["content_bottom"] - source_h - 0.20 - plot_top
+
+    cd = CategoryChartData()
+    cd.categories = list(categories)
+    for name, values in column_series:
+        cd.add_series(str(name), tuple(values), column_format)
+    for name, values in marker_series:
+        cd.add_series(str(name), tuple(values), marker_format)
+
+    gf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, CM(left),
+                                CM(plot_top), CM(width), CM(height), cd)
+    ch = gf.chart
+    ch.font.name = BODY_FONT
+    ch.font.size = Pt(AXIS_PT)
+    ch.has_title = False
+    ch.has_legend = True
+    ch.legend.position = {"bottom": XL_LEGEND_POSITION.BOTTOM,
+                          "top": XL_LEGEND_POSITION.TOP}[legend_position]
+    ch.legend.include_in_layout = False
+    ch.legend.font.size = Pt(LEGEND_PT)
+    ch.legend.font.name = BODY_FONT
+
+    palette = list(colours) if colours else [COBALT, DARK_BLUE, KPMG_BLUE]
+    n_cols = len(column_series)
+    for i, ser in enumerate(ch.series):
+        if i < n_cols:
+            ser.format.fill.solid()
+            ser.format.fill.fore_color.rgb = palette[i % len(palette)]
+            ser.format.line.fill.background()
+    _style_axis(ch.value_axis)
+    _style_axis(ch.category_axis)
+    try:
+        ch.value_axis.minimum_scale = 0
+    except (AttributeError, ValueError):
+        pass
+    if plot_rect is not None:
+        _manual_plot(ch, *plot_rect)
+    _promote_to_markers(ch, n_cols, marker_colour=PACIFIC)
+    _kill_gridlines(ch)
+
+    if source and draw_source:
+        exhibit_source(slide, source)
+    if register_data:
+        cid = chart_id or _slug(title)
+        register(slide, cid, title, basis, source, categories,
+                 list(column_series) + list(marker_series), kind="combo")
+        gf.name = f"EXHIBIT::{cid}"
+    return ch
+
+
+def _kill_gridlines(ch):
+    """Strip every majorGridlines element in the chart XML.
+
+    Belt and braces for charts whose axes python-pptx can no longer resolve,
+    which is any chart carrying a hand-injected secondary axis.
+    """
+    from pptx.oxml.ns import qn
+    for el in ch._chartSpace.iter():
+        for tag in ("c:majorGridlines", "c:minorGridlines"):
+            child = el.find(qn(tag))
+            if child is not None:
+                el.remove(child)
+
+
+def _promote_to_markers(ch, first_marker_index, marker_colour=PACIFIC):
+    """Move trailing series onto the secondary axis as detached markers.
+
+    python-pptx has no API for a combo chart, so this edits the chart XML the
+    same way PowerPoint does: swap the trailing <c:ser> elements into a
+    <c:lineChart> on axis group 1, no line, diamond markers.
+    """
+    from pptx.oxml.ns import qn
+    plotArea = ch._chartSpace.find(qn('c:chart')).find(qn('c:plotArea'))
+    barChart = plotArea.find(qn('c:barChart'))
+    if barChart is None:
+        return
+    sers = barChart.findall(qn('c:ser'))
+    movers = sers[first_marker_index:]
+    if not movers:
+        return
+
+    lineChart = plotArea.makeelement(qn('c:lineChart'), {})
+    grouping = plotArea.makeelement(qn('c:grouping'), {'val': 'standard'})
+    lineChart.append(grouping)
+    for ser in movers:
+        barChart.remove(ser)
+        spPr = ser.find(qn('c:spPr'))
+        if spPr is not None:
+            ser.remove(spPr)
+        idx_el = ser.find(qn('c:idx'))
+        anchor = ser.find(qn('c:tx'))
+        new_spPr = ser.makeelement(qn('c:spPr'), {})
+        ln = ser.makeelement(qn('a:ln'), {})
+        ln.append(ser.makeelement(qn('a:noFill'), {}))
+        new_spPr.append(ln)
+        marker = ser.makeelement(qn('c:marker'), {})
+        symbol = ser.makeelement(qn('c:symbol'), {'val': 'diamond'})
+        size = ser.makeelement(qn('c:size'), {'val': '7'})
+        m_spPr = ser.makeelement(qn('c:spPr'), {})
+        fill = ser.makeelement(qn('a:solidFill'), {})
+        clr = ser.makeelement(qn('a:srgbClr'), {'val': str(marker_colour)})
+        fill.append(clr)
+        m_spPr.append(fill)
+        m_ln = ser.makeelement(qn('a:ln'), {})
+        m_ln.append(ser.makeelement(qn('a:noFill'), {}))
+        m_spPr.append(m_ln)
+        marker.append(symbol)
+        marker.append(size)
+        marker.append(m_spPr)
+        insert_after = anchor if anchor is not None else idx_el
+        insert_after.addnext(marker)
+        marker.addprevious(new_spPr)
+        lineChart.append(ser)
+
+    lineChart.append(plotArea.makeelement(qn('c:marker'), {'val': '1'}))
+    # Secondary axis pair
+    val_ax_id, cat_ax_id = '900001', '900002'
+    for aid in (cat_ax_id, val_ax_id):
+        ref = lineChart.makeelement(qn('c:axId'), {'val': aid})
+        lineChart.append(ref)
+    barChart.addnext(lineChart)
+
+    catAx = plotArea.makeelement(qn('c:catAx'), {})
+    for tag, attrs in (('c:axId', {'val': cat_ax_id}),
+                       ('c:scaling', None), ('c:delete', {'val': '1'}),
+                       ('c:axPos', {'val': 'b'}),
+                       ('c:crossAx', {'val': val_ax_id})):
+        el = plotArea.makeelement(qn(tag), attrs or {})
+        if tag == 'c:scaling':
+            el.append(plotArea.makeelement(qn('c:orientation'),
+                                           {'val': 'minMax'}))
+        catAx.append(el)
+
+    valAx = plotArea.makeelement(qn('c:valAx'), {})
+    for tag, attrs in (('c:axId', {'val': val_ax_id}),
+                       ('c:scaling', None), ('c:delete', {'val': '0'}),
+                       ('c:axPos', {'val': 'r'}),
+                       ('c:majorTickMark', {'val': 'none'}),
+                       ('c:minorTickMark', {'val': 'none'}),
+                       ('c:tickLblPos', {'val': 'nextTo'}),
+                       ('c:crossAx', {'val': cat_ax_id}),
+                       ('c:crosses', {'val': 'max'})):
+        el = plotArea.makeelement(qn(tag), attrs or {})
+        if tag == 'c:scaling':
+            el.append(plotArea.makeelement(qn('c:orientation'),
+                                           {'val': 'minMax'}))
+        valAx.append(el)
+
+    plotArea.append(catAx)
+    plotArea.append(valAx)
+
+
+def bubble_exhibit(slide, points, *, title, basis, source=None, chart_id=None,
+                   left=None, top=None, width=None, height=None,
+                   legend_position="bottom", colours=None, register_data=True):
+    """Scatter with a third variable in the mark size.
+
+    `points` is a list of (group_name, [(x, y, size, label), ...]). Each group
+    is one colour and one legend entry, which is what makes the colour mean
+    something. Labels are the point names; pass None to leave a point unlabelled.
+    """
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+    plot_top = exhibit_head(slide, title, basis, left, top, width)
+    source_h = 0.70 if source else 0.0
+    if height is None:
+        height = GRID["content_bottom"] - source_h - 0.20 - plot_top
+
+    cd = BubbleChartData()
+    for group, rows in points:
+        s = cd.add_series(str(group))
+        for x, y, size, _label in rows:
+            s.add_data_point(x, y, size)
+
+    gf = slide.shapes.add_chart(XL_CHART_TYPE.BUBBLE, CM(left), CM(plot_top),
+                                CM(width), CM(height), cd)
+    ch = gf.chart
+    ch.font.name = BODY_FONT
+    ch.font.size = Pt(AXIS_PT)
+    ch.has_title = False
+    ch.has_legend = len(points) > 1
+    if ch.has_legend:
+        ch.legend.position = {"bottom": XL_LEGEND_POSITION.BOTTOM,
+                              "top": XL_LEGEND_POSITION.TOP}[legend_position]
+        ch.legend.include_in_layout = False
+        ch.legend.font.size = Pt(LEGEND_PT)
+        ch.legend.font.name = BODY_FONT
+    palette = list(colours) if colours else [DARK_BLUE, PACIFIC, COBALT, BLUE]
+    for i, ser in enumerate(ch.series):
+        ser.format.fill.solid()
+        ser.format.fill.fore_color.rgb = palette[i % len(palette)]
+        ser.format.line.color.rgb = WHITE
+    _style_axis(ch.value_axis)
+    try:
+        _style_axis(ch.category_axis)
+    except ValueError:
+        pass
+
+    if source:
+        exhibit_source(slide, source)
+    if register_data:
+        cid = chart_id or _slug(title)
+        rows = []
+        cats = [lbl or f"{x},{y}" for _g, rr in points for x, y, _s, lbl in rr]
+        series = [(g, [y for _x, y, _s, _l in rr]) for g, rr in points]
+        register(slide, cid, title, basis, source, cats, series, kind="bubble")
+        gf.name = f"EXHIBIT::{cid}"
+    return ch
+
+
+# ---------------------------------------------------------------------------
+# Hand-built exhibits
+#
+# These are shapes, not pictures: every element stays selectable and
+# recolourable in PowerPoint. PowerPoint has no native chart type for any of
+# them, and all three published decks use all three.
+# ---------------------------------------------------------------------------
+
+def _line(slide, x1, y1, x2, y2, colour=GREY[4], width_pt=0.75, dash=None):
+    from pptx.enum.shapes import MSO_CONNECTOR
+    ln = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, CM(x1), CM(y1),
+                                    CM(x2), CM(y2))
+    ln.line.color.rgb = colour
+    ln.line.width = Pt(width_pt)
+    if dash:
+        from pptx.enum.dml import MSO_LINE_DASH_STYLE
+        ln.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+    return ln
+
+
+def _dot(slide, cx, cy, d, colour):
+    s = slide.shapes.add_shape(MSO_SHAPE.OVAL, CM(cx - d / 2), CM(cy - d / 2),
+                               CM(d), CM(d))
+    s.fill.solid()
+    s.fill.fore_color.rgb = colour
+    s.line.fill.background()
+    s.shadow.inherit = False
+    return s
+
+
+def dumbbell(slide, rows, *, title, basis, source=None, chart_id=None,
+             draw_source=True,
+             label_a, label_b, colour_a=PACIFIC, colour_b=DARK_BLUE,
+             left=None, top=None, width=None, height=None,
+             value_format="{:+.1f}%", ref_value=0.0, ref_label=None,
+             label_col=4.6, register_data=True):
+    """Two points per category, joined by a rule. The change is the exhibit.
+
+    `rows` is a list of (category, value_a, value_b). This is the pattern the
+    HKEX deck uses for ROIC minus WACC by sector: it shows level and movement
+    in one mark, which a paired bar chart cannot do without doubling the ink.
+
+    Every point carries its own value label in its own series colour, because
+    a legend the eye has to travel to is a tax on every reader.
+    """
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+    plot_top = exhibit_head(slide, title, basis, left, top, width)
+
+    # Key, inline above the plot, in words.
+    kx = left
+    for lbl, col in ((label_a, colour_a), (label_b, colour_b)):
+        _dot(slide, kx + 0.12, plot_top + 0.22, 0.24, col)
+        _textbox(slide, lbl, kx + 0.34, plot_top + 0.02,
+                 max(1.6, 0.17 * len(lbl)), 0.40, LEGEND_PT,
+                 colour=RGBColor(0, 0, 0), name="EXHIBIT_KEY")
+        kx += 0.34 + max(1.6, 0.17 * len(lbl)) + 0.45
+    plot_top += 0.70
+
+    source_h = 0.70 if source else 0.0
+    if height is None:
+        height = GRID["content_bottom"] - source_h - 0.30 - plot_top
+
+    vals = [v for _c, a, b in rows for v in (a, b)]
+    lo, hi = min(vals), max(vals)
+    pad = (hi - lo) * 0.18 or 1.0
+    lo, hi = min(lo - pad, ref_value), max(hi + pad, ref_value)
+
+    plot_x = left + label_col
+    plot_w = width - label_col
+    row_h = height / max(len(rows), 1)
+
+    def X(v):
+        return plot_x + (v - lo) / (hi - lo) * plot_w
+
+    # Reference line first, so the marks sit on top of it.
+    rx = X(ref_value)
+    _line(slide, rx, plot_top, rx, plot_top + height,
+          colour=RGBColor(0, 0, 0), width_pt=1.0)
+    if ref_label:
+        _textbox(slide, ref_label, rx - 2.0, plot_top - 0.46, 4.0, 0.40, BASIS_PT,
+                 colour=RGBColor(0, 0, 0), align=PP_ALIGN.CENTER,
+                 name="EXHIBIT_REFLABEL")
+
+    for i, (cat, a, b) in enumerate(rows):
+        cy = plot_top + row_h * (i + 0.5)
+        xa, xb = X(a), X(b)
+        _line(slide, min(xa, xb), cy, max(xa, xb), cy, colour=GREY[4], width_pt=1.0)
+        _textbox(slide, cat, left, cy - 0.22, label_col - 0.40, 0.44, AXIS_PT,
+                 colour=DARK_BLUE, align=PP_ALIGN.RIGHT, name="DUMBBELL_CAT")
+        close = abs(xa - xb) < 2.60
+        # Which mark is on the left is a property of the values, not of the
+        # series. Assuming a is always left put both labels on the same side
+        # whenever a category moved backwards, and the two then overprinted.
+        # Found 25 August 2026 by qa.gate_overlap on the HKEX sector page.
+        a_is_left = xa <= xb
+        for x, v, col, is_a in ((xa, a, colour_a, True), (xb, b, colour_b, False)):
+            side = -1 if (is_a == a_is_left) else 1
+            _dot(slide, x, cy, 0.26, col)
+            if close:
+                # Push the labels apart along the row rather than letting them
+                # overprint: two marks close together is the case the reader
+                # most needs the numbers for.
+                lx = x - 2.30 if side < 0 else x + 0.22
+                align = PP_ALIGN.RIGHT if side < 0 else PP_ALIGN.LEFT
+                ly = cy - 0.18
+            else:
+                lx, align, ly = x - 1.1, PP_ALIGN.CENTER, cy + 0.13
+            # Keep the label inside the plot. A mark near the left edge
+            # otherwise prints its value on top of its own category name.
+            if lx < plot_x:
+                lx, align = plot_x, PP_ALIGN.LEFT
+            elif lx + 2.2 > plot_x + plot_w:
+                lx, align = plot_x + plot_w - 2.2, PP_ALIGN.RIGHT
+            _textbox(slide, value_format.format(v), lx, ly, 2.2, 0.36,
+                     DATA_LABEL_PT + 1, colour=col, align=align,
+                     name="DUMBBELL_VALUE")
+
+    if source and draw_source:
+        exhibit_source(slide, source)
+    if register_data:
+        cid = chart_id or _slug(title)
+        register(slide, cid, title, basis, source,
+                 [c for c, _a, _b in rows],
+                 [(label_a, [a for _c, a, _b in rows]),
+                  (label_b, [b for _c, _a, b in rows])], kind="dumbbell")
+    return plot_top + height
+
+
+def share_bar(slide, segments, *, left=None, top=None, width=None,
+              height=1.10, label_below=True, colours=None, caption=None):
+    """One horizontal bar split into labelled shares of a whole.
+
+    `segments` is a list of (label, share, caption_below). Shares are absolute
+    and are normalised to the bar's width, so the whole is always visible: a
+    share is never shown without its whole.
+    """
+    left = TL["plot_x"] if left is None else left
+    width = TL["plot_w"] if width is None else width
+    top = GRID["content_top"] if top is None else top
+    palette = list(colours) if colours else [DARK_BLUE, LIGHT_BLUE, GREY[5]]
+
+    if caption:
+        _textbox(slide, caption, left, top, width, 0.42, BASIS_PT,
+                 colour=GREY[1], name="EXHIBIT_BASIS")
+        top += 0.46
+
+    total = float(sum(s for _l, s, _c in segments)) or 1.0
+    x = left
+    for i, (label, share, below) in enumerate(segments):
+        w = width * share / total
+        col = palette[i % len(palette)]
+        box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, CM(x), CM(top),
+                                     CM(w), CM(height))
+        box.fill.solid()
+        box.fill.fore_color.rgb = col
+        box.line.fill.background()
+        box.shadow.inherit = False
+        tf = box.text_frame
+        tf.margin_left = tf.margin_right = Cm(0.1)
+        tf.margin_top = tf.margin_bottom = 0
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run()
+        r.text = label
+        r.font.name = BODY_FONT
+        r.font.size = Pt(9)
+        r.font.bold = True
+        r.font.color.rgb = WHITE if col in (DARK_BLUE, KPMG_BLUE, COBALT) else DARK_BLUE
+        if label_below and below:
+            _textbox(slide, below, x, top + height + 0.10, w, 0.42, AXIS_PT,
+                     colour=GREY[2], align=PP_ALIGN.CENTER, name="SHAREBAR_CAP")
+        x += w
+    return top + height + (0.55 if label_below else 0.10)
+
+
+def key_features(slide, items, *, left=None, top=None, width=None,
+                 height=2.60, fill=COBALT, heading=None):
+    """The full-width feature band the published TL uses to close a page.
+
+    `items` is a list of (bold_lead, supporting_line). Columns are divided by
+    thin white rules, exactly as in the published deck, and the band is one
+    solid brand colour rather than a gradient so it stays on palette.
+    """
+    left = GRID["left"] if left is None else left
+    width = GRID["content_w"] if width is None else width
+    top = GRID["content_top"] if top is None else top
+
+    band = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, CM(left), CM(top),
+                                  CM(width), CM(height))
+    band.fill.solid()
+    band.fill.fore_color.rgb = fill
+    band.line.fill.background()
+    band.shadow.inherit = False
+    band.name = "KEY_FEATURES"
+    band.text_frame.text = ""
+
+    pad = 0.55
+    y = top + pad
+    inner_h = height - 2 * pad
+    if heading:
+        _textbox(slide, heading, left + pad, y, width - 2 * pad, 0.62, 14,
+                 bold=True, colour=WHITE, name="KEY_FEATURES_HEAD")
+        y += 0.78
+        inner_h -= 0.78
+
+    n = max(len(items), 1)
+    col_w = (width - 2 * pad) / n
+    for i, (lead, support) in enumerate(items):
+        x = left + pad + col_w * i
+        if i:
+            _line(slide, x - 0.18, y, x - 0.18, y + inner_h, colour=WHITE,
+                  width_pt=0.75)
+        _textbox(slide, lead, x, y, col_w - 0.36, 0.44, 9, bold=True,
+                 colour=WHITE, name="KEY_FEATURE_LEAD")
+        _textbox(slide, support, x, y + 0.50, col_w - 0.36, inner_h - 0.50, 9,
+                 colour=LIGHT_BLUE, name="KEY_FEATURE_BODY")
+    return top + height
+
+
+def kpi_band(slide, tiles, *, left=None, top=None, width=None, height=2.10,
+             rule=True):
+    """A row of headline numbers, each with its label and its basis.
+
+    `tiles` is a list of (number, label, basis). The number is the point of
+    the tile, so it is set large; the basis is what stops it being a claim.
+
+    The label box is sized to the height its text actually wraps to, and the
+    basis is pushed down to clear it. Fixed 26 August 2026: the label was a
+    fixed 0.50 cm, one line, so a two-line label printed over its own basis
+    line. `qa.gate_text_overflow` catches it, which is how it was found, but a
+    band whose only safe label is a short one is a band that quietly pushes you
+    into rewriting the label — and under Mode A the label is the document's
+    words and is not yours to shorten.
+    """
+    left = GRID["left"] if left is None else left
+    width = GRID["content_w"] if width is None else width
+    top = GRID["content_top"] if top is None else top
+    n = max(len(tiles), 1)
+    col_w = width / n
+    for i, (number, label, basis) in enumerate(tiles):
+        x = left + col_w * i
+        if rule and i:
+            _line(slide, x - 0.20, top, x - 0.20, top + height, colour=GREY[4])
+        _textbox(slide, str(number), x, top, col_w - 0.40, 0.98, 24, bold=True,
+                 colour=KPMG_BLUE, name="KPI_NUMBER")
+        label_w = col_w - 0.40
+        label_h = max(0.50, est_text_height(label, label_w, 9, bold=True) + 0.04)
+        _textbox(slide, label, x, top + 0.96, label_w, label_h, 9, bold=True,
+                 colour=DARK_BLUE, name="KPI_LABEL")
+        if basis:
+            basis_y = top + 0.96 + label_h + 0.02
+            _textbox(slide, basis, x, basis_y, label_w,
+                     max(0.40, top + height - basis_y),
+                     BASIS_PT, colour=GREY[2], name="KPI_BASIS")
+    return top + height
+
+
+def sparse_labels(categories, keep):
+    """Removed 26 August 2026. Use `label_every()` instead.
+
+    This blanked unwanted category names with runs of zero-width spaces. The
+    axis read correctly and **the chart's data did not**: the blanks go into the
+    embedded workbook, so Edit Data in PowerPoint showed empty category cells
+    instead of "Q3 2021" and "2025-09-08", and the same blanks reached the data
+    booklet. House note, 26 August 2026: a chart should be an Excel graph, and that
+    applies to what is inside it as much as to what it is.
+
+    `label_every(chart, n)` does the job natively with `c:tickLblSkip`: every
+    category keeps its real name in the data and only the drawing of the labels
+    is thinned. It raises rather than warning because the failure it replaces
+    was silent, and a silent one is the kind that ships.
+    """
+    raise NotImplementedError(
+        "sparse_labels() corrupted the chart's embedded workbook by writing "
+        "zero-width spaces into the category names. Pass the real categories "
+        "and call exhibits.label_every(chart, n) instead.")
+
+
+def small_multiples(slide, n, *, left=None, top=None, width=None, gutter=0.60):
+    """Return the (x, width) of each panel in a shared-scale row.
+
+    Small multiples only work when the panels share a scale and a legend, so
+    this hands back geometry and leaves the caller to draw one legend for the
+    row rather than one per panel.
+    """
+    left = TL["plot_x"] if left is None else left
+    width = TL["plot_w"] if width is None else width
+    top = GRID["content_top"] if top is None else top
+    panel_w = (width - gutter * (n - 1)) / n
+    return [(left + (panel_w + gutter) * i, panel_w) for i in range(n)]
+
+
+def data_table(slide, rows, *, left=None, top=None, width=None, height=None,
+               title=None, basis=None, source=None, col_widths=None,
+               align=None, band=True, title_row=False, header_fill=LIGHT_BLUE,
+               row_h=0.62, header_h=0.70, draw_source=True, slot=None):
+    """A table built as an exhibit rather than as a grid of words.
+
+    Differences from deckkit.table(), which stays as it was:
+      * it carries the exhibit title and basis line, so a table is sourced and
+        argued like any other exhibit
+      * row height is set from the row count instead of being stretched to
+        fill a box, which is what made earlier tables read as padded
+      * numeric columns right-align and get a small gap from the next column,
+        so a right-aligned header stops colliding with its left-aligned neighbour
+      * optional grey banding at Grey 5, as the published TL uses
+    """
+    from deckkit import _looks_numeric
+    if slot is not None:
+        left, top, width, _h = slot_geometry(
+            slot, head=bool(title), source=bool(source) and draw_source)
+    left = GRID["left"] if left is None else left
+    width = GRID["content_w"] if width is None else width
+    top = GRID["content_top"] if top is None else top
+    if title:
+        top = exhibit_head(slide, title, basis, left, top, width)
+
+    n_rows, n_cols = len(rows), len(rows[0])
+    header_rows = 2 if title_row else 1
+    if height is None:
+        height = header_h * header_rows + row_h * (n_rows - header_rows)
+
+    gf = slide.shapes.add_table(n_rows, n_cols, CM(left), CM(top),
+                                CM(width), CM(height))
+    tbl = gf.table
+    tbl.first_row = False
+    tbl.horz_banding = False
+
+    if col_widths:
+        for i, w in enumerate(col_widths):
+            tbl.columns[i].width = Cm(w)
+    for i, r in enumerate(tbl.rows):
+        r.height = Cm(header_h if i < header_rows else row_h)
+
+    if align is None:
+        align = []
+        for c in range(n_cols):
+            body = [rows[r][c] for r in range(header_rows, n_rows)]
+            align.append("r" if body and all(_looks_numeric(v) for v in body) else "l")
+
+    amap = {"l": PP_ALIGN.LEFT, "c": PP_ALIGN.CENTER, "r": PP_ALIGN.RIGHT}
+    for r, row in enumerate(rows):
+        for c, val in enumerate(row):
+            cell = tbl.cell(r, c)
+            cell.margin_left = cell.margin_right = Cm(0.14)
+            cell.margin_top = cell.margin_bottom = Cm(0.06)
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+            tf = cell.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            p.alignment = amap[align[c]] if r >= header_rows else (
+                amap[align[c]] if align[c] != "l" else PP_ALIGN.LEFT)
+            run = p.add_run()
+            run.text = "" if val is None else str(val)
+            run.font.name = BODY_FONT
+            run.font.size = Pt(8)
+            cell.fill.solid()
+            if title_row and r == 0:
+                cell.fill.fore_color.rgb = DARK_BLUE
+                run.font.bold = True
+                run.font.color.rgb = WHITE
+            elif r < header_rows:
+                cell.fill.fore_color.rgb = header_fill
+                run.font.bold = True
+                run.font.color.rgb = DARK_BLUE
+            else:
+                shaded = band and ((r - header_rows) % 2 == 1)
+                cell.fill.fore_color.rgb = GREY[5] if shaded else WHITE
+                run.font.color.rgb = RGBColor(0, 0, 0)
+
+    if source and draw_source:
+        exhibit_source(slide, source)
+    return top + height
+
+
+# ---------------------------------------------------------------------------
+# Depth exhibits, added 25 August 2026.
+#
+# A deck that argues from data needs more than columns and bars: a long series
+# labelled at its own end rather than through a legend, a decomposition, a cost
+# curve spanning orders of magnitude, and one focal mark in a field of neutral
+# ones. All four are in the published decks.
+# ---------------------------------------------------------------------------
+
+def focal(n, index, accent=PACIFIC, base=None):
+    """Palette for a chart where exactly one category is the point.
+
+    Returns a per-point colour list: everything neutral, one mark accented.
+    Colour everywhere is colour nowhere; this is how you spend it once.
+    """
+    base = base or GREY[4]
+    return [accent if i == index else base for i in range(n)]
+
+
+def _point_colours(ch, colours):
+    """Colour individual points of a single-series chart."""
+    ser = list(ch.series)[0]
+    for i, col in enumerate(colours):
+        try:
+            pt = ser.points[i]
+            pt.format.fill.solid()
+            pt.format.fill.fore_color.rgb = col
+            pt.format.line.fill.background()
+        except (IndexError, AttributeError, ValueError):
+            pass
+
+
+def _log_axis(ch, base=10):
+    """Put the value axis on a log scale.
+
+    Legitimate only for a quantity spanning orders of magnitude, and only when
+    the basis line says so. A log axis has no zero, so it is never used for
+    bars, whose length encodes the value: `chart_exhibit` refuses that pairing.
+    """
+    from pptx.oxml.ns import qn
+    ax = ch._chartSpace.find(qn('c:chart')).find(qn('c:plotArea'))
+    for valAx in ax.findall(qn('c:valAx')):
+        scaling = valAx.find(qn('c:scaling'))
+        if scaling is None:
+            continue
+        existing = scaling.find(qn('c:logBase'))
+        if existing is not None:
+            scaling.remove(existing)
+        el = scaling.makeelement(qn('c:logBase'), {'val': str(base)})
+        scaling.insert(0, el)
+        break
+
+
+def _end_label(ch, series_index, show_name=True):
+    """Label a line at its own end instead of sending the eye to a legend."""
+    try:
+        ser = list(ch.series)[series_index]
+        pts = list(ser.points)
+        if not pts:
+            return
+        dl = pts[-1].data_label
+        dl.show_value = True
+        tf_font = dl.font
+        tf_font.size = Pt(DATA_LABEL_PT + 1)
+        tf_font.name = BODY_FONT
+        tf_font.bold = True
+        # Set the flags on the XML rather than through the properties: the
+        # python-pptx setters rewrite each other's elements, and the series
+        # name silently came back as 0 when show_value was set after it.
+        # Verified against the written chart XML on 25 Aug 2026.
+        from pptx.oxml.ns import qn
+        el = dl._get_or_add_dLbl()
+        for tag, val in (('c:showSerName', '1' if show_name else '0'),
+                         ('c:showVal', '1'),
+                         ('c:showCatName', '0'),
+                         ('c:showLegendKey', '0')):
+            node = el.find(qn(tag))
+            if node is not None:
+                node.set('val', val)
+    except (AttributeError, IndexError, ValueError):
+        pass
+
+
+def line_exhibit(slide, categories, series, *, title, basis, source=None,
+                 chart_id=None, units=None, left=None, top=None, width=None,
+                 height=None, colours=None, end_labels=True, markers=False,
+                 number_format=None, log=False, register_data=True,
+                 draw_source=True, legend=None, plot_rect=None,
+                 vmin=None, vmax=None, data_labels=False, slot=None,
+                 label_position=None):
+    """A time series labelled at the end of each line.
+
+    The published decks almost never put a legend under a line chart: they
+    write the series name and its final value at the end of the line, in the
+    line's own colour. A legend the eye has to travel to is a tax on every
+    reader, and with three or more series it is a tax paid repeatedly.
+    """
+    kind = "line_markers" if markers else "line"
+    ch = chart_exhibit(slide, kind, categories, series, title=title,
+                       basis=basis, source=source, chart_id=chart_id,
+                       units=units, left=left, top=top, width=width,
+                       height=height, colours=colours,
+                       data_labels=data_labels,
+                       legend=(not end_labels) if legend is None else legend,
+                       number_format=number_format, plot_rect=plot_rect,
+                       vmin=vmin, vmax=vmax, label_position=label_position,
+                       register_data=register_data, draw_source=draw_source,
+                       slot=slot)
+    if log:
+        if "log" not in (basis or "").lower():
+            raise ValueError(
+                "a log axis must be disclosed in the basis line, e.g. "
+                "'... , log scale'. Otherwise the reader misreads the gaps.")
+        _log_axis(ch)
+    if end_labels:
+        palette = list(colours) if colours else list(CHART_SERIES)
+        for i, _s in enumerate(series):
+            _end_label(ch, i)
+            try:
+                pts = list(list(ch.series)[i].points)
+                pts[-1].data_label.font.color.rgb = palette[i % len(palette)]
+            except (AttributeError, IndexError, ValueError):
+                pass
+    return ch
+
+
+def _suppress_labels(ser):
+    """Delete the data labels on one series.
+
+    python-pptx sets labels per plot, not per series, and a waterfall's
+    invisible base series would otherwise print a column of meaningless
+    numbers floating in mid-air under the real ones.
+    """
+    from pptx.oxml.ns import qn
+    el = ser._element
+    existing = el.find(qn('c:dLbls'))
+    if existing is not None:
+        el.remove(existing)
+    dLbls = el.makeelement(qn('c:dLbls'), {})
+    dLbls.append(el.makeelement(qn('c:delete'), {'val': '1'}))
+    anchor = el.find(qn('c:spPr'))
+    if anchor is None:
+        anchor = el.find(qn('c:tx'))
+    if anchor is not None:
+        anchor.addnext(dLbls)
+    else:
+        el.append(dLbls)
+
+
+def waterfall(slide, steps, *, title, basis, source=None, chart_id=None,
+              units=None, left=None, top=None, width=None, height=None,
+              start_label="Start", end_label="End", rise=PACIFIC,
+              fall=GREY[2], total=DARK_BLUE, number_format="#,##0",
+              register_data=True, draw_source=True):
+    """A bridge from one total to another.
+
+    `steps` is a list of (label, delta) between the two totals. Built as a
+    stacked column with an invisible base, which is how PowerPoint's own
+    waterfall works underneath, so the result stays a native editable chart.
+    """
+    left = TL["plot_x"] if left is None else left
+    top = GRID["content_top"] if top is None else top
+    width = TL["plot_w"] if width is None else width
+    plot_top = exhibit_head(slide, title, basis, left, top, width)
+    source_h = 0.70 if (source and draw_source) else 0.0
+    if height is None:
+        height = GRID["content_bottom"] - source_h - 0.20 - plot_top
+
+    start = steps[0][1]
+    cats = [start_label] + [lbl for lbl, _d in steps[1:]] + [end_label]
+    base, visible, running = [], [], start
+    base.append(0.0)
+    visible.append(start)
+    for _lbl, delta in steps[1:]:
+        if delta >= 0:
+            base.append(running)
+            visible.append(delta)
+        else:
+            base.append(running + delta)
+            visible.append(-delta)
+        running += delta
+    base.append(0.0)
+    visible.append(running)
+
+    cd = CategoryChartData()
+    cd.categories = cats
+    cd.add_series("base", tuple(base), number_format)
+    cd.add_series("value", tuple(visible), number_format)
+    gf = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_STACKED, CM(left),
+                                CM(plot_top), CM(width), CM(height), cd)
+    ch = gf.chart
+    ch.font.name = BODY_FONT
+    ch.font.size = Pt(AXIS_PT)
+    ch.has_title = False
+    ch.has_legend = False
+
+    sers = list(ch.series)
+    sers[0].format.fill.background()
+    sers[0].format.line.fill.background()
+    _suppress_labels(sers[0])
+    cols = ([total] + [rise if d >= 0 else fall for _l, d in steps[1:]]
+            + [total])
+    for i, col in enumerate(cols):
+        try:
+            pt = sers[1].points[i]
+            pt.format.fill.solid()
+            pt.format.fill.fore_color.rgb = col
+            pt.format.line.fill.background()
+        except (IndexError, AttributeError, ValueError):
+            pass
+    try:
+        plot = ch.plots[0]
+        plot.gap_width = 45
+        plot.has_data_labels = True
+        dl = plot.data_labels
+        dl.font.size = Pt(DATA_LABEL_PT)
+        dl.font.name = BODY_FONT
+        dl.number_format = number_format
+        dl.number_format_is_linked = False
+    except (IndexError, ValueError):
+        pass
+    _style_axis(ch.value_axis)
+    _style_axis(ch.category_axis)
+    _kill_gridlines(ch)
+
+    if source and draw_source:
+        exhibit_source(slide, source, left, plot_top + height + 0.10, width)
+    if register_data:
+        cid = chart_id or _slug(title)
+        register(slide, cid, title, basis, source, cats,
+                 [("Waterfall step", visible)], kind="waterfall", units=units)
+        gf.name = f"EXHIBIT::{cid}"
+    return ch
+
+
+def sorted_bar(slide, pairs, *, title, basis, source=None, chart_id=None,
+               units=None, highlight=None, descending=True, left=None,
+               top=None, width=None, height=None, number_format=None,
+               accent=PACIFIC, base=None, register_data=True,
+               draw_source=True, slot=None):
+    """A ranked bar chart with one focal mark, sorted by value.
+
+    Sorting by value rather than alphabetically is what makes a ranked chart
+    readable, and `highlight` spends the one accent colour on the category the
+    slide is actually about. `pairs` is a list of (label, value).
+    """
+    rows = sorted(pairs, key=lambda p: p[1], reverse=not descending)
+    cats = [c for c, _v in rows]
+    vals = [v for _c, v in rows]
+    idx = cats.index(highlight) if highlight in cats else -1
+    ch = chart_exhibit(slide, "bar", cats, [(title[:28] or "Value", vals)],
+                       title=title, basis=basis, source=source,
+                       chart_id=chart_id, units=units, left=left, top=top,
+                       width=width, height=height, legend=False,
+                       number_format=number_format, slot=slot,
+                       register_data=register_data, draw_source=draw_source)
+    _point_colours(ch, focal(len(vals), idx, accent=accent, base=base))
+    return ch
+
+
+# ---------------------------------------------------------------------------
+# The annotation layer, added 25 August 2026.
+#
+# House note: "The graph quality and depth of your graphics is not enough."
+# Correct. The charts above draw data and nothing else. The published decks
+# draw data AND the reader's route through it: a reference line labelled "Cost
+# of capital", an event marker where the shock starts, a callout on the one
+# point that carries the argument, values written inside the bars.
+#
+# None of that is possible without knowing where the plot area actually sits
+# inside the chart frame, and python-pptx does not expose it. So we stop
+# guessing and pin it: `plot_rect` writes a manual layout into the chart XML,
+# after which the plot rectangle is known in centimetres and anything can be
+# positioned against it exactly.
+# ---------------------------------------------------------------------------
+
+def _manual_plot(ch, fx, fy, fw, fh):
+    """Pin the plot area to a fraction of the chart frame.
+
+    Without this the plot area floats wherever the renderer puts it, and every
+    annotation drawn beside the chart is a guess that breaks on reflow.
+    """
+    from pptx.oxml.ns import qn
+    plotArea = ch._chartSpace.find(qn('c:chart')).find(qn('c:plotArea'))
+    old = plotArea.find(qn('c:layout'))
+    if old is not None:
+        plotArea.remove(old)
+    layout = plotArea.makeelement(qn('c:layout'), {})
+    manual = layout.makeelement(qn('c:manualLayout'), {})
+    manual.append(manual.makeelement(qn('c:layoutTarget'), {'val': 'inner'}))
+    for tag, val in (('c:xMode', 'edge'), ('c:yMode', 'edge')):
+        manual.append(manual.makeelement(qn(tag), {'val': val}))
+    for tag, val in (('c:x', fx), ('c:y', fy), ('c:w', fw), ('c:h', fh)):
+        manual.append(manual.makeelement(qn(tag), {'val': '%.6f' % val}))
+    layout.append(manual)
+    plotArea.insert(0, layout)
+
+
+class PlotRect(object):
+    """The plot area in absolute centimetres, so annotations are deterministic.
+
+    `x_at(i, n)` gives the centre of category i of n, which is where a column
+    or a category tick sits. `y_at(v)` gives the height of a value on the
+    axis, linear or log.
+    """
+
+    def __init__(self, left, top, width, height, *, vmin=0.0, vmax=1.0,
+                 log=False):
+        self.left, self.top = left, top
+        self.width, self.height = width, height
+        self.right, self.bottom = left + width, top + height
+        self.vmin, self.vmax, self.log = vmin, vmax, log
+
+    def x_at(self, i, n):
+        """Centre of category i (0-based) when the axis holds n categories."""
+        return self.left + self.width * (i + 0.5) / max(n, 1)
+
+    def x_frac(self, f):
+        return self.left + self.width * f
+
+    def y_at(self, v):
+        import math
+        if self.log:
+            lo, hi = math.log10(max(self.vmin, 1e-9)), math.log10(self.vmax)
+            t = (math.log10(max(v, 1e-9)) - lo) / (hi - lo)
+        else:
+            t = (v - self.vmin) / (self.vmax - self.vmin)
+        return self.bottom - self.height * max(0.0, min(1.0, t))
+
+
+def plot_rect(left, top, width, height, *, inset=(0.09, 0.04, 0.89, 0.84),
+              vmin=0.0, vmax=1.0, log=False):
+    """Build a PlotRect for a chart placed at (left, top, width, height).
+
+    `inset` is the same fraction tuple passed to `chart_exhibit(plot_rect=...)`,
+    so the two always agree by construction.
+    """
+    fx, fy, fw, fh = inset
+    return PlotRect(left + width * fx, top + height * fy,
+                    width * fw, height * fh,
+                    vmin=vmin, vmax=vmax, log=log)
+
+
+def event_line(slide, rect, x, label, *, colour=GREY[2], above=True,
+               dash=True, label_width=5.0):
+    """A dated vertical marker with its label, for the moment something changed.
+
+    `x` is an absolute cm position, normally `rect.x_at(i, n)`.
+    """
+    _line(slide, x, rect.top, x, rect.bottom, colour=colour, width_pt=1.0,
+          dash=dash)
+    y = rect.top - 0.46 if above else rect.bottom + 0.10
+    # Clamp the label inside the plot. An event marker near the right edge
+    # otherwise pushes its own caption into the commentary column, which is
+    # how a marker ends up printed over a paragraph.
+    lx = x - label_width / 2
+    align = PP_ALIGN.CENTER
+    if lx < rect.left:
+        lx, align = rect.left, PP_ALIGN.LEFT
+    elif lx + label_width > rect.right:
+        lx, align = rect.right - label_width, PP_ALIGN.RIGHT
+    _textbox(slide, label, lx, y, label_width, 0.42, BASIS_PT,
+             colour=colour, align=align, name="EXHIBIT_EVENT")
+    return x
+
+
+def reference_line(slide, rect, value, label, *, colour=RGBColor(0, 0, 0),
+                   dash=False, side="left"):
+    """A horizontal rule at a value that means something, and its name.
+
+    A hurdle rate, a break-even, a prior peak. The published decks label these
+    in words on the plot rather than leaving the reader to read them off an axis.
+    """
+    y = rect.y_at(value)
+    _line(slide, rect.left, y, rect.right, y, colour=colour, width_pt=1.0,
+          dash=dash)
+    if side == "left":
+        _textbox(slide, label, rect.left + 0.12, y - 0.46, 8.0, 0.42, BASIS_PT,
+                 colour=colour, name="EXHIBIT_REFLABEL")
+    else:
+        _textbox(slide, label, rect.right - 8.12, y - 0.46, 8.0, 0.42,
+                 BASIS_PT, colour=colour, align=PP_ALIGN.RIGHT,
+                 name="EXHIBIT_REFLABEL")
+    return y
+
+
+def callout(slide, rect, x, y, text, *, dx=1.6, dy=-1.4, colour=COBALT,
+            width=6.0, height=1.10, align=PP_ALIGN.LEFT):
+    """A boxed note pointing at one mark, per the QRG's call-out box spec.
+
+    1pt Cobalt Blue line, white fill, Arial 7pt black, and it is made higher
+    rather than wider. `x` and `y` are absolute cm, normally from the rect.
+    """
+    bx, by = x + dx, y + dy
+    _line(slide, x, y, bx if dx < 0 else bx, by + height / 2,
+          colour=colour, width_pt=1.0)
+    box = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, CM(bx), CM(by),
+                                 CM(width), CM(height))
+    box.fill.solid()
+    box.fill.fore_color.rgb = WHITE
+    box.line.color.rgb = colour
+    box.line.width = Pt(1)
+    box.shadow.inherit = False
+    box.name = "EXHIBIT_CALLOUT"
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Cm(0.15)
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]
+    p.alignment = align
+    r = p.add_run()
+    r.text = text
+    r.font.name = BODY_FONT
+    r.font.size = Pt(7)
+    r.font.color.rgb = RGBColor(0, 0, 0)
+    return box
+
+
+def label_inside_bars(ch, *, colour=WHITE, size=DATA_LABEL_PT + 1,
+                      number_format=None):
+    """Write the values inside the bars instead of floating beside them.
+
+    This is what lets a 20-bar chart stay readable: the label travels with the
+    mark. Bars too short to hold their label keep it outside.
+    """
+    from pptx.enum.chart import XL_LABEL_POSITION
+    try:
+        plot = ch.plots[0]
+        plot.has_data_labels = True
+        dl = plot.data_labels
+        dl.position = XL_LABEL_POSITION.INSIDE_END
+        dl.font.size = Pt(size)
+        dl.font.name = BODY_FONT
+        dl.font.bold = True
+        dl.font.color.rgb = colour
+        if number_format:
+            dl.number_format = number_format
+            dl.number_format_is_linked = False
+    except (IndexError, ValueError, AttributeError):
+        pass
+    return ch
+
+
+def sparkline(slide, values, left, top, width, height, *, colour=KPMG_BLUE,
+              last_dot=True):
+    """A tiny inline series, for a table row or beside a KPI tile.
+
+    Carries shape, not values, so it never gets an axis. Tufte's point and the
+    published decks' practice: the trend belongs next to the number it explains.
+    """
+    lo, hi = min(values), max(values)
+    span = (hi - lo) or 1.0
+    n = len(values)
+    pts = [(left + width * i / (n - 1), top + height * (1 - (v - lo) / span))
+           for i, v in enumerate(values)]
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        _line(slide, x1, y1, x2, y2, colour=colour, width_pt=1.25)
+    if last_dot:
+        _dot(slide, pts[-1][0], pts[-1][1], 0.16, colour)
+    return pts[-1]
+
+
+# ---------------------------------------------------------------------------
+# Page slots, added 25 August 2026.
+#
+# House note: "Either half the page, or the entirety bottom of the page for this
+# one, the top should also be the same rule. It either is half page, 1/4 page,
+# full page, or 2 on 1 page. Map graphics also work."
+#
+# So an exhibit does not get an arbitrary height. It occupies a named fraction
+# of the content zone, and the fractions come off the master's own guides: the
+# content zone is y 3.73 to 16.32, the half-height line is y 10.13, and the two
+# columns are 2.73 and 17.43, each 13.70 wide. An exhibit placed anywhere else
+# is drift, and `qa.gate_exhibit_slot` fails it.
+#
+# The slot is the exhibit's TOTAL footprint including its title and basis
+# block. `chart_exhibit(slot="half_left")` works out the plot height from what
+# the head leaves behind, so the caller never does that arithmetic and never
+# gets it wrong.
+# ---------------------------------------------------------------------------
+
+HEAD_H = 1.14          # exhibit title + basis line + the gap beneath them
+
+SLOTS = {
+    # Full page: one exhibit carries everything.
+    "full":                 (2.73, 3.73, 28.40, 12.59),
+
+    # Half page, split horizontally. Two of these is "2 on 1 page".
+    "half_top":             (2.73, 3.73, 28.40, 6.40),
+    "half_bottom":          (2.73, 10.13, 28.40, 6.19),
+
+    # Half page, split vertically. `half_left` plus a read in `half_right` is
+    # the workhorse: the exhibit is one master column and stops short of the
+    # slide's centre line, which is the whole point of the column.
+    "half_left":            (2.73, 3.73, 13.70, 12.59),
+    "half_right":           (17.43, 3.73, 13.70, 12.59),
+
+    # Quarter page. Two stacked on the left with a read on the right is the
+    # other common shape.
+    "quarter_top_left":     (2.73, 3.73, 13.70, 6.40),
+    "quarter_top_right":    (17.43, 3.73, 13.70, 6.40),
+    "quarter_bottom_left":  (2.73, 10.13, 13.70, 6.19),
+    "quarter_bottom_right": (17.43, 10.13, 13.70, 6.19),
+}
+
+
+def slot(name):
+    """(left, top, width, height) of a named page slot, in centimetres."""
+    try:
+        return SLOTS[name]
+    except KeyError:
+        raise ValueError(
+            "unknown slot %r. An exhibit is a full page, a half page, a "
+            "quarter page, or one of two on a page: %s"
+            % (name, ", ".join(sorted(SLOTS))))
+
+
+def slot_geometry(name, *, head=True, source=False):
+    """Geometry for an exhibit filling a slot.
+
+    Returns (left, top, width, plot_height): the plot height is what the slot
+    leaves after its title and basis block, and after a source line if this
+    exhibit draws its own rather than sharing one.
+    """
+    left, top, width, height = slot(name)
+    h = height - (HEAD_H if head else 0.0) - (0.70 if source else 0.0)
+    return left, top, width, round(h, 2)
+
+
+def in_slot(rect, tolerance=0.25):
+    """Name the slot a placed exhibit occupies, or None if it is off-grid.
+
+    Matched on the plot rectangle's left, width and its span within the slot,
+    since the plot sits below the slot's head.
+    """
+    x, y, w, h = rect
+    best = None
+    for name, (sx, sy, sw, sh) in SLOTS.items():
+        if abs(x - sx) > tolerance or abs(w - sw) > tolerance:
+            continue
+        if y < sy - tolerance:
+            continue
+        if y + h > sy + sh + tolerance:
+            continue
+        if best is None or sh < SLOTS[best][3]:
+            best = name
+    return best
+
+
+def slot_plot_rect(name, *, title=None, basis=None, source=False,
+                   inset=(0.10, 0.04, 0.86, 0.80), vmin=0.0, vmax=1.0,
+                   log=False):
+    """PlotRect for an exhibit placed with `slot=`, derived from the slot.
+
+    Added 25 August 2026. Converting the exhibits to slots left every
+    hand-built `plot_rect(left, top, width, height, ...)` call carrying the old
+    hardcoded numbers, so annotations were positioned against a plot area that
+    no longer existed. Deriving the rectangle from the same slot name the chart
+    was placed with makes that drift impossible.
+
+    Pass the same `title` and `basis` the exhibit uses so the head height is
+    measured, not assumed: a wrapped title moves the plot down.
+    """
+    left, top, width, _h = slot(name)
+    head = 0.18
+    if title:
+        head += max(0.50, est_text_height(title, width, EXHIBIT_TITLE_PT,
+                                          bold=True) + 0.06)
+    if basis:
+        head += max(0.42, est_text_height(basis, width, BASIS_PT) + 0.06) + 0.04
+    _l, _t, _w, plot_h = slot_geometry(name, head=False, source=source)
+    return plot_rect(left, top + head, width, plot_h - head,
+                     inset=inset, vmin=vmin, vmax=vmax, log=log)

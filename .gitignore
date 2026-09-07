@@ -1,0 +1,17 @@
+.env
+.env.*
+*.key
+*.pem
+.DS_Store
+node_modules/
+__pycache__/
+.venv/
+# Commercial Type faces licensed to KPMG. Never commit, never push.
+# The skill's own fonts.check_not_tracked() fails loudly if this breaks.
+Work/_deck/design/assets/fonts/
+**/assets/fonts/
+*.ttf
+*.otf
+
+# Obsidian workspace state
+.obsidian/workspace.json
