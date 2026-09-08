@@ -1,12 +1,11 @@
 ---
 tags: [note, skills, kpmg-deck, content]
-date: 2026-09-08
 ---
 
 # Content rules — turning supplied content into slide text
 
-**Read this at step 1 of the pipeline in `START-HERE.md`, before drafting a
-single line.** These are write-time rules. `qa-checklist.md` covers what the
+**Read this at step 1 of the pipeline in `SKILL.md`, before drafting a single
+line.** These are write-time rules. `qa-checklist.md` covers what the
 gates check afterwards and why they are shaped as they are.
 
 The house workflow always supplies content: a `.md`, a `.pdf`, a `.docx`,
@@ -67,10 +66,9 @@ sentence assembled from its words.
 
 ## Punctuation is house style
 
-`fill()` adds the terminal full stop a body paragraph takes. Verified 27 August
-2026: `content_fidelity` normalises punctuation out before matching spans, so
-the added stop is invisible to the verbatim gate and cannot turn a traceable
-string into an untraceable one.
+`fill()` adds the terminal full stop a body paragraph takes. `content_fidelity`
+normalises punctuation out before matching spans, so the added stop is invisible
+to the verbatim gate and cannot turn a traceable string into an untraceable one.
 
 Where a supplied document's own punctuation has to survive character for
 character, pass `fill(..., punctuate=False)` on those slides and say so in the
@@ -112,8 +110,7 @@ qa.content_fidelity(prs, open("source.txt").read())   # mode="verbatim" is the d
 
 ## Exhibits: native charts only
 
-**An exhibit is a native chart, never a picture of one.** House note, 26 August
-2026: *"images shouldn't be pictures if possible, instead excel graph."*
+**An exhibit is a native chart, never a picture of one.**
 
 A native chart carries an embedded Excel workbook, so a reader can open Edit Data
 and check the numbers; the palette and type scale are inherited from the master;

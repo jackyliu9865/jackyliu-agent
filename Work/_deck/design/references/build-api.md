@@ -1,11 +1,10 @@
 ---
 tags: [note, skills, kpmg-deck, build]
-date: 2026-09-08
 ---
 
 # Build API — how to fill the master with code
 
-**Read this at step 5 of the pipeline in `START-HERE.md`**, once the content is
+**Read this at step 5 of the pipeline in `SKILL.md`**, once the content is
 written and the plan for each slide is agreed. `content-rules.md` governs what
 the words may be; this governs how they get onto the page.
 
@@ -25,11 +24,11 @@ every detail a reviewer checks.
 import sys; sys.path.insert(0, "<path-to-design>/scripts")
 from deckkit import *
 
-prs = new_deck()
+prs = new_deck(kind="report")   # report | publication | proposal | talkbook
 
 s = add(prs, "Cover page")
 fill(s, title="Project Falcon",
-        ph11=["Commercial due diligence", "", "12 August 2026"],
+        ph11=["Commercial due diligence", "", "[Date]"],
         ph13="KPMG. Make the Difference.")
 
 s = add(prs, "One Column Text")
@@ -42,6 +41,12 @@ fill(s, title="Revenue grew but mix deteriorated",
 
 save(prs, "falcon.pptx")   # relative to the project folder; never machine-absolute
 ```
+
+**Declare the deck kind.** `new_deck(kind=...)` stamps the type and turns on
+three gates in `qa`: the deck opens on `Cover page`, ends on its own back cover,
+and carries no other type's back cover. `deckkit.DECK_TYPES` holds the table.
+Omitting `kind` skips those gates and the QA report says so. Grid, type scale and
+palette do not vary by type, so there is nothing else in the profile.
 
 `fill()` keys are `ph<idx>`, and the idx numbers come from `layouts.md` — they
 differ between layouts. Values are a string, a list of strings, or a list of

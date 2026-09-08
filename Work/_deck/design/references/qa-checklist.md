@@ -1,24 +1,17 @@
 ---
 tags: [note, skills, kpmg-deck, qa]
-date: 2026-08-25
-last_updated: 2026-08-25
 ---
 
 # QA checklist
 
-Review note, 25 August 2026: check the QA checklist has been incorporated into
-the skill, and **the agent should be able to flag or highlight areas where QA
-is not met**.
-
-It is now incorporated as code. `scripts/qa.py` runs it and prints PASS or FAIL
+**The agent flags every area where QA is not met.** The checklist is
+incorporated as code. `scripts/qa.py` runs it and prints PASS or FAIL
 per gate. A gate that reports PASS actually ran; anything that cannot be
 automated honestly prints as MANUAL rather than being quietly assumed.
 
-**Provenance.** The review note points at the back sections of the KPMG PPT
-training deck. **That deck is not on this machine** (searched 25 August 2026:
-Downloads, Documents, Desktop, the vault, iCloud Drive, plus a full-home
-`mdfind`). The checklist below is therefore built from the house-style QRG, sections 4,
-5 and 9, which is the only house-style artefact that exists here. It is bundled
+**Provenance.** The KPMG PPT training deck, which the original review pointed
+at, is not on this machine. The checklist below is built from the house-style
+QRG, sections 4, 5 and 9, the only house-style artefact present. It is bundled
 at `references/house-style-qrg.md` and mirrors the vault note
 `Career/KPMG House Style — PowerPoint & Report QRG.md`. **When the
 training deck is supplied, this file and `qa.py` need reconciling against it.**
@@ -45,8 +38,8 @@ exercises every exhibit type. Run it after any change to the skill.
 | **Correct master, no strays** | Slides sitting on more than one master | QRG §9, style check |
 | **Closed palette only** | Any shape or series filled off the palette | `brand.md` |
 | **Type scale** | A hand-set font size outside 6/7/8/9/10/14/18/24/44/66pt | QRG §4 |
-| **Colour carries a key** | A chart with more than one series and no legend; a legend over 8pt | House note, 25 Aug 2026 |
-| **Traffic lights have a scale** | RAG chips on a slide whose note never says what red, amber and green mean | House note, 25 Aug 2026 |
+| **Colour carries a key** | A chart with more than one series and no legend; a legend over 8pt | House rule |
+| **Traffic lights have a scale** | RAG chips on a slide whose note never says what red, amber and green mean | House rule |
 | **Exhibit title and basis** | A chart with no exhibit title, or no basis line | `exhibits.md` §1 |
 | **Every exhibit sourced** | A chart or table on a content slide with no source line | QRG §3 |
 | **UK English** | US `-ize` / `-ization` spellings. Words built on *size* (unsized, downsized, right-sizing) are correct UK English and are exempt | QRG §8 |
@@ -55,18 +48,18 @@ exercises every exhibit type. Run it after any change to the skill.
 | **Telephone format** | A number not in international `+852 xxxx xxxx` form | QRG §9 |
 | **Nothing below the line** | Content past the floor at y 16.33 cm. The source strip (idx 17, idx 18, `EXHIBIT_SOURCE`) legitimately sits below it and is held to the strip instead. A table's height is estimated from its text, because PowerPoint grows rows to fit and reports nothing | Master marker |
 | **Draft stamp** | Reports `INFO`, not `FAIL`: the banner is correct on a draft and comes off in the master for a final version | QRG §9 |
-| **Charts linked to the booklet** | A chart with no booklet entry, or an entry with no basis or source | House note, 25 Aug 2026 |
+| **Charts linked to the booklet** | A chart with no booklet entry, or an entry with no basis or source | House rule |
 
-| **No text overlapping text** | Two text shapes sharing space. A callout over its own chart is intended and exempt | House note, 25 Aug 2026 |
-| **Nothing bleeds into the read column** | A left-column exhibit crossing into the commentary at the same height | House note, 25 Aug 2026 |
-| **Exhibit width on the grid** | Any chart or table not 13.70 cm or 28.40 cm wide. There is nothing legitimate in between | House note, 25 Aug 2026 |
-| **Exhibit fills a page slot** | An exhibit at an arbitrary rectangle rather than a named full / half / quarter slot | House note, 25 Aug 2026 |
-| **Text fits its box** | Text estimated to overflow the shape it is drawn in, which a geometric overlap check cannot see | 25 Aug 2026 |
-| **Exhibit title fits one line** | An exhibit title that wraps to two. The fix is a shorter sentence, never a smaller font | 25 Aug 2026 |
+| **No text overlapping text** | Two text shapes sharing space. A callout over its own chart is intended and exempt | House rule |
+| **Nothing bleeds into the read column** | A left-column exhibit crossing into the commentary at the same height | House rule |
+| **Exhibit width on the grid** | Any chart or table not 13.70 cm or 28.40 cm wide. There is nothing legitimate in between | House rule |
+| **Exhibit fills a page slot** | An exhibit at an arbitrary rectangle rather than a named full / half / quarter slot | House rule |
+| **Text fits its box** | Text estimated to overflow the shape it is drawn in, which a geometric overlap check cannot see | House rule |
+| **Exhibit title fits one line** | An exhibit title that wraps to two. The fix is a shorter sentence, never a smaller font | House rule |
 
 | **House style, find and replace** | The QRG find-and-replace list: `n/a`, `versus`, `e.g.`, contractions, FY form, spacing, currency, spaced hyphen for an en dash, single-digit ordinals, `circa`, and `%` loose in prose. Judgement calls sit in `HOUSE_STYLE_REVIEW` and report without failing | QRG §3 |
 
-| **Exhibits are charts, not pictures** | Any picture larger than about 2.6 cm on both sides. An exhibit is a native chart with its own embedded workbook; icons are the exception | House note, 26 Aug 2026 |
+| **Exhibits are charts, not pictures** | Any picture larger than about 2.6 cm on both sides. An exhibit is a native chart with its own embedded workbook; icons are the exception | House rule |
 
 **Twenty-one gates in `qa.GATES`.** Plus the structural gates in `deckkit.check()`,
 which run first: title over 36 characters, placeholder still showing prompt text,
@@ -82,8 +75,8 @@ already on the machine.
 ### Corrections from live use
 
 A gate that cries wolf gets ignored, which is worse than not having the gate.
-Both of these were found on the first real deck the module ran against, on
-25 August 2026, and both were the gate's fault, not the deck's:
+Both were found on the first real deck the module ran against, and both were
+the gate's fault:
 
 | Reported | Verdict | Fix |
 |---|---|---|
@@ -113,9 +106,8 @@ Printed by `qa.report()` every run, because they cannot be automated honestly:
 
 ## Content fidelity
 
-Review note, 25 August 2026: **the AI must stick to the input content without
-making changes to it.** House note, 26 August 2026, sharpening it: **when a document
-is supplied, use its words word for word and change none of them.**
+**When a document is supplied, use its words word for word and change none of
+them.** The operative rules are in [[content-rules]].
 
 ```python
 import source_text, qa
@@ -129,9 +121,9 @@ be built from contiguous runs of words taken from the document. Re-wrapping and
 stopping early are fine; paraphrase, synonyms, inserted connectives, expanded
 acronyms, reordering and mid-sentence deletion are not.
 
-**Rewritten 26 August 2026, because the previous version was too weak to be
-worth running.** It checked that every word appeared *somewhere* in the input, in
-any order. Re-run against a deck that had passed it clean, the new check found
+**An earlier version was too weak to be worth running.** It checked that every
+word appeared *somewhere* in the input, in any order. Re-run against a deck that
+had passed it clean, the current check found
 **53 strings that had quietly been paraphrased** — every individual word came
 from the article, which is exactly how a bag-of-words check gets fooled.
 
@@ -165,9 +157,8 @@ every page and run the seven composition checks in `design-principles.md` §7.
 
 ## The QA pass in full, and why each gate exists
 
-Moved out of `SKILL.md` 27 August 2026. The five-step sequence and the
-commands stay there; the reasoning lives here, and is read while doing QA
-rather than before deciding what to build.
+The reasoning behind each gate, read while doing QA rather than before
+deciding what to build.
 
 `save()` runs `check(prs)` first and prints anything it finds. Fix the findings
 rather than passing `verify=False` — each one is a defect that shows up on the
@@ -181,9 +172,9 @@ rendered slide:
 - **Empty idx 17 or 18** — a data slide with no source, or a slide with no
   stated argument.
 - **A chart with its own title, gridlines, a font over 10pt, or more than about
-  twelve categories.** Added 21 Aug 2026: nothing inspected charts before, so a
-  hand-built chart with gridlines, a 24pt centred black title and 18pt axis text
-  passed every gate in the package. Use `chart()`, which cannot produce those.
+  twelve categories.** Without this, a hand-built chart with gridlines, a 24pt
+  centred black title and 18pt axis text passes every other gate. Use `chart()`,
+  which cannot produce those.
 - **No source line or no strapline on a layout that has neither placeholder** —
   a table or chart slide built on `Title only_Blank` with nothing identifying its
   argument or its evidence. Call `strapline()` and `note()`; they fall back to a
@@ -231,12 +222,12 @@ the template it was built from.
 package and checks that every entry inflates, that `[Content_Types].xml` types
 every part, that every XML part is well-formed, that every internal relationship
 resolves, and that every slide reaches exactly one layout and every layout one
-master. Verified 25 August 2026 against two deliberately damaged fixtures: a
-deck with a slide layout deleted (11 findings, naming every dangling reference)
-and a deck with one slide truncated mid-XML (1 finding, naming the part).
+master. Verified against two deliberately damaged fixtures: a deck with a slide
+layout deleted (11 findings, naming every dangling reference) and a deck with one
+slide truncated mid-XML (1 finding, naming the part).
 
-**Rewritten 25 August 2026 to make the skill self-contained.** This step used to
-borrow `validate.py` from the **pptx** skill, which is a different package, needs
+**Self-contained by design.** This step used to borrow `validate.py` from the
+**pptx** skill, which is a different package, needs
 `defusedxml`, and needs Python 3.10 or newer because it uses `match`. macOS ships
 3.9.6, so the documented QA pass could not run on a clean machine without first
 installing `uv`, building a 3.12 virtualenv and pip-installing into it. A skill
@@ -288,7 +279,7 @@ Do not claim the deck was visually checked when only `check(prs)` ran.
 like the better route, since PowerPoint has the real fonts and LibreOffice
 substitutes KPMG Bold. It does not work: Office on macOS is sandboxed and
 `save … as save as PDF` fails with error -9074 on any path outside its container,
-including `~/Documents`. Tested 12 Aug 2026 on macOS 15.6. Use LibreOffice and
+including `~/Documents`. Use LibreOffice and
 live with the font substitution, judging titles by character count rather than by
 the preview.
 
@@ -316,8 +307,8 @@ layouts that carry them.
 
 ## Mode A: why the fidelity gate is shaped as it is
 
-Moved out of `SKILL.md` 27 August 2026. The rule and the allowed/not-allowed
-table stay there; the reasoning is here.
+The rule and the allowed/not-allowed table are in [[content-rules]]; the
+reasoning is here.
 
 ### Why mid-sentence deletion is refused
 

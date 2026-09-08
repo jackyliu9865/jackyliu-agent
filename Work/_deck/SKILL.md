@@ -1,13 +1,16 @@
 ---
-type: entry-point
-applies_to: every PowerPoint task
-last_updated: 2026-09-08
+name: kpmg-deck
+description: "Build PowerPoint decks on the KPMG 2025 brand-refresh slide master — cover, section dividers, key findings, analysis, summary financials, back covers — with the locked palette, 44pt/9pt/8pt/6pt type scale and 2.72cm grid. Use this skill for ANY request to make a deck, slides, a presentation, a pitch, a report-out, or a .pptx, whenever the work is for KPMG or the person has previously used this template — even if they don't name the template, say \"branded\", or mention KPMG in that particular message. Also use it when editing, extending or brand-checking an existing deck built on this master."
 ---
 
 # Decks — start here
 
-**Any PowerPoint task starts here.** The job is one thing: turn supplied content
-into a coherent deck. Follow the six steps in order. Do not skip ahead.
+**Any PowerPoint task starts here, and this is the only entry point.** The job is
+one thing: turn supplied content into a coherent deck. Follow the six steps in
+order. Do not skip ahead.
+
+For an MBB-quality deck that is **not** on the KPMG master (case, recruiting,
+board, unnamed strategy work), use **consulting-deck** instead.
 
 ---
 
@@ -27,8 +30,8 @@ extract. Transcribe those by hand under a heading saying where they came from.
 sentence, invent a finding, expand an acronym it abbreviated, or research the
 topic to add more. If the content does not say something a slide needs, **ask**.
 
-The operative rules — what counts as a legal shortening, why deleting mid-sentence
-is refused, how names are handled — are in
+The operative rules — what counts as a legal shortening, why deleting
+mid-sentence is refused, how names are handled — are in
 `design/references/content-rules.md`. Read it before drafting.
 
 → *Exit: every word that will appear on a slide exists in the source.*
@@ -40,12 +43,12 @@ is refused, how names are handled — are in
 - What is this deck for?
 - Who reads it, and are they in the room or reading it alone?
 
-| Purpose | Folder | Template |
-|---|---|---|
-| Client deliverable, read without a presenter | `Report/` | [[Report]] |
-| Published thought leadership | `Report/` | [[Report]], publication variant |
-| Sells an engagement | `Proposal/` | [[Proposal]] — **not written, ask** |
-| Presented live | `Talkbook/` | [[Talkbook]] — **blocked, ask** |
+| Purpose | Folder | Lead file | `kind` |
+|---|---|---|---|
+| Client deliverable, read without a presenter | `Report/` | [[Report]] | `report` |
+| Published thought leadership | `Report/` | [[Report]], publication variant | `publication` |
+| Sells an engagement | `Proposal/` | [[Proposal]] — **not written, ask** | `proposal` |
+| Presented live | `Talkbook/` | [[Talkbook]] — **blocked, ask** | `talkbook` |
 
 Read the lead file for the chosen type before going on. Where it says *not
 written*, stop and ask rather than borrowing another type in silence.
@@ -92,7 +95,8 @@ spec the build script is written from.
 
 Then write and run the build script per `design/references/build-api.md`.
 `deckkit` for placeholders, `exhibits.chart_exhibit()` for anything with a
-number.
+number. **Open the deck with `new_deck(kind=...)`** from the table in step 2, so
+the deck-type gates run.
 
 → *Exit: `save()` returns without raising.*
 
@@ -150,15 +154,21 @@ Read the file that answers the question in front of you.
 | Writing the build script | `design/references/build-api.md` |
 | Wording and punctuation | `design/references/house-style-qrg.md` |
 | The QA pass and what each gate fails on | `design/references/qa-checklist.md` |
-| Where everything in the package lives | `design/SKILL.md` |
-| What works on this Mac | [[environment]] |
 | Which master each deck type uses | [[slide-template]] |
+| What works on this Mac | [[environment]] |
 
-## The package is a local fork
+**Assets**, all under `design/assets/`:
 
-`design/` started as the imported `kpmg-deck` package and is now **edited in
-place**, version-controlled with the vault. Fix things there directly rather than
-recording an override somewhere else.
+- `template.pptx` — the cleaned master, zero slides. `new_deck()` opens it
+- `specimen-deck.pptx` — the 28-slide sample. For looking at and for lifting
+  pre-formatted tables. **Never a starting point**; see [[slide-template]]
+- `fonts/` — the nine brand faces
+
+## `design/` is a local fork
+
+`design/` is the imported `kpmg-deck` package, now **edited in place** and
+version-controlled with the vault. Fix things there directly rather than
+recording an override elsewhere.
 
 The unmodified import is tagged **`kpmg-deck-pristine`**. To take an upstream
 update:
@@ -171,16 +181,21 @@ Drop the new package into `Work/_deck/design/`, commit, then merge into `main`.
 Git resolves everything upstream changed that was not touched here, and raises a
 conflict only where both moved.
 
-**House changes made so far**, so a merge conflict is recognisable:
+**House changes inside `design/`**, so a merge conflict is recognisable:
 
 | Change | Why |
 |---|---|
-| `SKILL.md` cut from 527 lines to a map | Its workflow and reference index competed with this file |
-| `references/content-rules.md`, `references/build-api.md` added | The content and API rules extracted out of `SKILL.md` |
+| `SKILL.md` deleted | Its workflow and reference index competed with this file. The package map lives here now |
+| `references/content-rules.md`, `references/build-api.md` added | The content and API rules extracted out of the old `SKILL.md` |
+| `references/*.md` — dated provenance notes stripped | House note dates carried no information the rule did not |
+| `scripts/deckkit.py` — `DECK_TYPES`, `new_deck(kind=...)` | Per-type closers made machine-readable |
+| `scripts/qa.py` — three deck-type gates | Cover, closer, and no foreign back cover |
 | `scripts/doctor.py:54` | Printed `pip3 install --user pptx`; the package is `python-pptx` |
-| `design/slide-template.md` added | Which master each deck type builds on |
 | Cite KPMG's own thought leadership | `design-principles.md` §6 forbids it. It is a legitimate source for its own data |
 | Use the 38 reference pages freely | `visual-reference/` marks them restricted |
+
+Everything else in `design/` is upstream. `design/README.txt` describes the
+package's original portable install, which this fork has superseded.
 
 ## Sources and citation
 

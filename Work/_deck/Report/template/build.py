@@ -2,6 +2,8 @@
 
 Trial run of the deck workflow, 31 August 2026.
 
+Deck kind is declared, so the deck-type gates run.
+
 NO REAL FIGURES. Every number here is illustrative and says so in its own basis
 line, per §6 of AGENTS.md and the illustrative-data rule in SKILL.md. This file
 is a layout template; it is not evidence of anything.
@@ -15,7 +17,7 @@ from deckkit import (new_deck, add, fill, bullets, note, strapline, drop,
 import exhibits as ex
 import qa, databooklet
 
-prs = new_deck()
+prs = new_deck(kind="report")
 
 # ---------------------------------------------------------------- front matter
 s = add(prs, "Cover page")

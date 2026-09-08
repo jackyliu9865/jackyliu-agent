@@ -1,6 +1,5 @@
 ---
 tags: [note, skills]
-date: 2026-08-05
 ---
 
 # Layout catalog
@@ -54,8 +53,7 @@ leaves 26 authoring layouts, all of them documented below.
 
 ## Narrative pages go on the Key findings layouts
 
-Added 25 August 2026, after four pages of a live deck were rebuilt. A page that
-carries three short columns of prose and no exhibit was hand-built on
+A page that carries three short columns of prose and no exhibit, hand-built on
 `Title only_Blank`, and every one of them left a third to a half of the page
 empty, because a hand-placed text box is only as tall as its text.
 
@@ -437,9 +435,7 @@ No placeholders — this layout is fixed artwork. Add the slide and leave it alo
 
 ## Traps found building on this master
 
-Moved out of `SKILL.md` 27 August 2026: these are read while laying out a slide, not before deciding what to build.
-
-Each of these cost a rebuild on a real deck. They are in the code now, but the
+Read these while laying out a slide. Each cost a rebuild on a real deck. They are in the code now, but the
 reason belongs here.
 
 - **A chart is 13.70 cm or 28.40 cm wide. Nothing between.** `gate_exhibit_width`

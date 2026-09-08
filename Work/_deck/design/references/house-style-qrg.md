@@ -1,15 +1,13 @@
 ---
 tags: [career, kpmg, powerpoint, house-style, reference, deliverable-standards]
-date: 2026-08-12
-last_updated: 2026-08-27
 status: active
 ---
 
 # KPMG House Style — PowerPoint & Report QRG
 
-Transcribed 12 August 2026 from the KPMG Diligence+ report template quick
-reference guide and the associated review checklists supplied by Anthew. This is
-the standing reference for any KPMG deliverable, not just decks. The `kpmg-deck`
+Transcribed from the KPMG Diligence+ report template quick reference guide and
+its associated review checklists. This is the standing reference for any KPMG
+deliverable, decks included. The `kpmg-deck`
 skill enforces the deck-relevant subset automatically; everything else is a
 manual check.
 
@@ -22,8 +20,8 @@ stays in the vault, never published, never pasted into a third-party tool.
 
 ## 1. The rule that overrides the QRG on decks
 
-**Bullets in decks do not take full stops.** House instruction from Anthew,
-12 August 2026, and the `kpmg-deck` default.
+**Bullets in decks do not take full stops.** House instruction, and the
+`kpmg-deck` default.
 
 Be aware this differs from the supplied QRG, which is written for the
 **Diligence+ report template** and says the opposite twice: "All bullets and
@@ -33,18 +31,15 @@ different deliverables. Decks follow the no-full-stop rule; long-form reports
 built on the report template follow the QRG. If a deck is being converted into a
 report, the punctuation has to change with it.
 
-**Body paragraphs are not bullets, and they do take a full stop.** House
-instruction from Anthew, 27 August 2026, clarifying the rule above. The
+**Body paragraphs are not bullets, and they do take a full stop.** The
 no-full-stop rule names *bullets*, meaning list items. A prose paragraph in a
 read column, a commentary block or a Key findings column is a body paragraph
 and is punctuated normally, terminal full stop included.
 
 The distinction is the outline level, not the sentence count. On the 2025
 master, levels 0 and 1 are unbulleted paragraphs and level 2 and deeper carry
-the bullet glyph. `kpmg-deck`'s `scan_text.py` was corrected on 27 August 2026
-to read the level: before that it treated every single-sentence body paragraph
-as a bullet and flagged its full stop. Existing decks were re-checked against
-the corrected rule and all four still pass.
+the bullet glyph. `scan_text.py` reads the level, so a single-sentence body
+paragraph is not mistaken for a bullet.
 
 Still unpunctuated, because none of them is a body paragraph: slide titles,
 straplines, dark-blue header bars, exhibit titles, exhibit basis lines and the

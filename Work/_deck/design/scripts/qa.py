@@ -441,6 +441,68 @@ def gate_draft_stamp(prs):
     return []
 
 
+
+def _layout_names(prs):
+    return [sl.slide_layout.name.strip() for sl in prs.slides]
+
+
+def gate_deck_type_closer(prs):
+    """A deck ends on its own back cover.
+
+    The master carries three: Report, Proposal and Publications. Which one a
+    deck ends on is the single most visible difference between the types, and
+    nothing else in the package checks it.
+    """
+    import deckkit
+    kind = deckkit.deck_kind(prs)
+    if kind is None:
+        return ["INFO: deck kind not declared. Pass new_deck(kind=...) to turn "
+                "on the deck-type gates"]
+    want = deckkit.DECK_TYPES[kind]["closer"]
+    names = _layout_names(prs)
+    if want is None:
+        return []                       # talkbook: no closer exists yet
+    if not names:
+        return ["deck has no slides"]
+    if names[-1] != want:
+        return ["a %s ends on %r; the last slide is %r"
+                % (deckkit.DECK_TYPES[kind]["label"], want, names[-1])]
+    return []
+
+
+def gate_deck_type_no_foreign_closer(prs):
+    """No deck carries another type's back cover, anywhere in it."""
+    import deckkit
+    kind = deckkit.deck_kind(prs)
+    if kind is None:
+        return []                       # already reported by the closer gate
+    mine = deckkit.DECK_TYPES[kind]["closer"]
+    out = []
+    for n, name in enumerate(_layout_names(prs), 1):
+        if name in deckkit.ALL_CLOSERS and name != mine:
+            out.append("slide %d uses %r, which belongs to a different deck "
+                       "type. This deck is a %s"
+                       % (n, name, deckkit.DECK_TYPES[kind]["label"]))
+    return out
+
+
+def gate_deck_opens_on_cover(prs):
+    """Slide 1 is the cover. Every type on this master opens the same way.
+
+    Only checked once a kind is declared. An undeclared deck may be a fixture,
+    an extract or a partial build, and none of those owes anyone a cover.
+    """
+    import deckkit
+    if deckkit.deck_kind(prs) is None:
+        return []
+    names = _layout_names(prs)
+    if not names:
+        return []
+    if names[0] != "Cover page":
+        return ["slide 1 is %r; every deck opens on 'Cover page'" % names[0]]
+    return []
+
+
 GATES = OrderedDict([
     ("Correct master, no strays", gate_masters),
     ("Closed palette only", gate_palette),
@@ -455,6 +517,9 @@ GATES = OrderedDict([
     ("Telephone format", gate_phone),
     ("Nothing below the line", gate_footprint),
     ("Draft stamp", gate_draft_stamp),
+    ("Deck opens on the cover", gate_deck_opens_on_cover),
+    ("Closer matches the deck type", gate_deck_type_closer),
+    ("No foreign back cover", gate_deck_type_no_foreign_closer),
 ])
 
 MANUAL = [

@@ -9,7 +9,7 @@ status: not written
 **Not written yet.** Do not build a proposal from this file. Ask first, or use
 [[Report]] and say plainly which parts were borrowed.
 
-Read [[START-HERE]] first.
+Read [[SKILL|the pipeline]] first.
 
 ## What is settled
 
@@ -36,7 +36,7 @@ Read [[START-HERE]] first.
 
 ## Related
 
-- [[START-HERE]]
+- [[SKILL|the pipeline]]
 - [[Report]]
 - [[Talkbook]]
 - [[environment]]

@@ -9,7 +9,7 @@ status: not written — awaiting layout
 **Not written yet, and blocked.** A separate layout is to be supplied. Do not
 build a talkbook on the current master and call it one.
 
-Read [[START-HERE]] first.
+Read [[SKILL|the pipeline]] first.
 
 ## Why this one is blocked rather than merely unwritten
 
@@ -39,7 +39,7 @@ Say so rather than labelling it a talkbook.
 
 ## Related
 
-- [[START-HERE]]
+- [[SKILL|the pipeline]]
 - [[Report]]
 - [[Proposal]]
 - [[environment]]

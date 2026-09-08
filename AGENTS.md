@@ -231,14 +231,14 @@ At session end, set `status`, add `ended`, and fill `## Outcome`.
 
 ## Deck and report production
 
-**Any PowerPoint task starts at `Work/_deck/START-HERE.md`.** It carries the
-six-step pipeline from supplied content to a finished deck. Read it before the
-first slide, whatever the ask.
+**Any PowerPoint task starts at `Work/_deck/SKILL.md`.** It carries the six-step
+pipeline from supplied content to a finished deck, and it is the only entry
+point. Read it before the first slide, whatever the ask.
 
 - KPMG-branded decks use the `kpmg-deck` skill, which carries the 2025 brand
   master, the locked palette and the type scale. Do not hand-build a KPMG deck.
-  The skill lives at `Work/_deck/design/`; `~/.claude/skills/kpmg-deck` symlinks
-  to it.
+  The skill is `Work/_deck/`; `~/.claude/skills/kpmg-deck` symlinks to it. The
+  imported package sits inside at `Work/_deck/design/`.
 - Charts and quantitative graphics follow the `dataviz` skill. Read it before the
   first line of chart code.
 - Both deck gates in §5 apply. Outline first, then one slide, then wait.

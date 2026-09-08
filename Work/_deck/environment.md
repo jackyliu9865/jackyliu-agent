@@ -22,7 +22,7 @@ re-run `python3 design/scripts/doctor.py` if it is stale.
 
 `doctor.py` reports **ready to build**.
 
-### Fonts — RESOLVED 1 September 2026
+### Fonts — resolved
 
 Nine Commercial Type faces at `design/assets/fonts/`, installed to
 `~/Library/Fonts`. Both families now registered: `KPMG` and `KPMG Logo`.
@@ -53,6 +53,11 @@ killall fontd
 
 **Any newly downloaded font will hit this again.** Check with
 `xattr <file> | grep quarantine` before assuming a font is broken.
+
+**Licence.** The faces are licensed to KPMG by Commercial Type. Internal use
+across your own devices is covered; handing the files outside KPMG is not. The
+vault-root `.gitignore` excludes every `.ttf` and `**/assets/fonts/`, and
+`fonts.check_not_tracked()` fails loudly if that ever breaks.
 
 **`doctor.py` gives a false green on fonts.** Its check is a directory listing,
 and a listing cannot see registration or quarantine. It reported
@@ -100,10 +105,10 @@ the package is **`python-pptx`** — `pptx` is a different project on PyPI. The
 name-mapping dict at `design/scripts/doctor.py:54` handled `docx` and missed
 `pptx`.
 
-**Patched 8 September 2026.** `design/` is a local fork now, so it was fixed in
-place rather than worked around. Recorded in the house-changes table in
-[[START-HERE]] so an upstream merge conflict is recognisable.
+**Patched.** `design/` is a local fork, so it was fixed in place rather than
+worked around. Recorded in the house-changes table in
+[[SKILL|the pipeline]] so an upstream merge conflict is recognisable.
 
 ## Related
 
-- [[START-HERE]]
+- [[SKILL|the pipeline]]

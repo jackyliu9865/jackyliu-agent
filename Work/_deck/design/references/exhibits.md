@@ -1,31 +1,26 @@
 ---
 tags: [note, skills, kpmg-deck, design, exhibits]
-date: 2026-08-25
-last_updated: 2026-08-27
 ---
 
 # Data exhibits
 
-Written 25 August 2026 on house instruction: **"At KPMG we use graphing and
-data heavy analysis."** The complaint that prompted it was a deck of text
-blocks with two charts in seventeen slides, colours that meant nothing, and a
-table that read as a grid of words.
+**KPMG runs on graphing and data-heavy analysis.** The failure this file
+exists to stop: a deck of text blocks with two charts in seventeen slides,
+colours that meant nothing, and a table that read as a grid of words.
 
 Read this before `design-principles.md` on any slide that carries a number.
 That file says how to compose a page. This says what an exhibit is.
 
-**Evidence base.** Three published KPMG decks, read page by page on 25 August
-2026: *Splintering supply chains*, *Hong Kong: the capital allocator's market*,
-and *Virtual assets: 2025 review and 2026 outlook*. Every rule below is
-something all three do, not something that seemed like a good idea.
+**Evidence base.** Three published KPMG decks, read page by page:
+*Splintering supply chains*, *Hong Kong: the capital allocator's market*, and
+*Virtual assets: 2025 review and 2026 outlook*. Every rule below is something
+all three do.
 
 ---
 
 ## 0. The goal
 
-**House note, 25 August 2026: "The goal is to come up with the most visually
-appealing visuals for the general public when creating the deck, based on
-content given."**
+**The goal is the most visually effective exhibit the given content supports.**
 
 Two things follow, and they are in tension with each other, which is the point.
 
@@ -87,8 +82,8 @@ text box above the plot. That is what `exhibit_head()` does.
 
 ## 2. Every chart links to the data booklet
 
-**House note, 25 August 2026: all graphs created should link to the accompanying
-databooklet.** Not a companion, the source of record.
+**Every graph links to the accompanying databooklet**, which is the source of
+record.
 
 Exhibits register their numbers as they are drawn, so `databooklet.write()`
 produces the booklet *from* the deck. The two cannot drift apart, and
@@ -168,9 +163,8 @@ asked of red chips that encoded nothing. That is now a gate, not a guideline.
 
 ### An exhibit fills a page slot
 
-**House note, 25 August 2026: "Either half the page, or the entirety bottom of the
-page for this one, the top should also be the same rule. It either is half
-page, 1/4 page, full page, or 2 on 1 page. Map graphics also work."**
+**An exhibit occupies a whole slot: half page, quarter page, full page, or two
+on one page.** Map graphics follow the same rule.
 
 An exhibit does not get an arbitrary rectangle. It fills a named fraction of
 the content zone, and the fractions come off the master's own guides: content
@@ -210,9 +204,8 @@ read as two charts dropped onto a slide rather than a designed pair.
 
 ### The default is the master's own grid
 
-**House note, 25 August 2026: "Graphs should generally be aligned to the left
-margins and at 13.7cm wide situationally. Do not take into account ROIC article
-formatting every time. The standard should still be the standard."**
+**Graphs align to the left margin, at 13.70 cm wide.** The standard is the
+standard; do not carry another publication's formatting into it.
 
 That is the governing rule and it corrects an earlier version of this file. The
 published thought-leadership pages use a publication grid; **this master is the
@@ -233,9 +226,9 @@ exhibit's left edge is the left margin unless it is the second element of a
 two-column layout, in which case it is 17.43.
 
 `exhibits.TL_WIDE` (plot 20.40, read 7.20) is **for hand-built content only, and
-never for a chart or a table.** Corrected 25 August 2026: this file used to
-offer it as a situational width for an exhibit that "cannot be read at 13.70",
-which contradicted the gates and would fail every build. `gate_exhibit_width`
+never for a chart or a table.** Offering it as a situational width for an
+exhibit that "cannot be read at 13.70" contradicts the gates and fails every
+build. `gate_exhibit_width`
 allows exactly two widths, 13.70 and 28.40, and `gate_exhibit_slot` constrains
 the position as well, so a chart at 20.40 is rejected — it ends at 23.13 and
 crosses the slide's centre line at 16.94, which is the failure the gate was
@@ -249,10 +242,9 @@ problem TL_WIDE looked like it solved.
 beneath rather than beside it.
 
 The read column is **prose in short paragraphs, not bullets**, and prose
-paragraphs **do** take a terminal full stop (house instruction, 27 August 2026,
-correcting what this file said before that date). `commentary()` adds it.
+paragraphs **do** take a terminal full stop. `commentary()` adds it.
 A 13.70 cm column 12 cm tall needs
-six to nine short paragraphs; two lines in it is the imbalance the house note flagged
+six to nine short paragraphs; two lines in it is the imbalance flagged
 on the first draft. If the read is genuinely two lines, the exhibit goes full
 width and the read sits underneath it.
 
@@ -294,7 +286,7 @@ a zero is a hyphen, negatives in brackets.
 bar chart. The table then holds the detail the chart cannot.
 
 **`data_table()` does not register in the data booklet, and `check_booklet()`
-cannot see that it has not.** Noted 25 August 2026. `chart_exhibit()` registers
+cannot see that it has not.** `chart_exhibit()` registers
 its numbers as it draws; a table does not, so a table full of figures can ship
 with none of them in the booklet and every gate still green. For a qualitative
 comparison table that is correct and nothing is missing. For a table a reader
@@ -305,8 +297,8 @@ will interrogate for numbers, either register them yourself with
 
 ## 7. Icons stay vector
 
-Review note, 25 August 2026: icons are placed as pictures and should be SVG so
-the fill colours can be changed easily.
+Icons are placed as pictures and should be SVG, so the fill colours can be
+changed.
 
 `icons.place()` writes an SVG the way PowerPoint writes one: a raster fallback
 blip plus an `asvg:svgBlip` extension pointing at a real SVG part. PowerPoint
@@ -326,9 +318,8 @@ It is a stand-in. The firm's approved set drops in beside it.
 
 ## The two full signatures
 
-Moved out of `SKILL.md` 27 August 2026: a signature is read while writing the call, not before deciding what to build.
-
-Both are load-bearing and neither was written down, so agents guessed and crashed.
+A signature is read while writing the call. Both are load-bearing, so they are
+written down here rather than guessed at.
 
 ```python
 chart(slide, kind, categories, series, left, top, width, height,
@@ -386,8 +377,6 @@ hand.
 
 ## The modules, and what each is for
 
-Moved out of `SKILL.md` 27 August 2026.
-
 | Module | What it is for |
 |---|---|
 | `deckkit.py` | The master's placeholders: `new_deck`, `add`, `fill`, `note`, `strapline`, `rag`, `drop`, `shade`, `table`, `chart`, `check`, `save` |
@@ -417,9 +406,8 @@ Moved out of `SKILL.md` 27 August 2026.
 
 ## 8. Annotation
 
-Added 25 August 2026, after "the graph quality and depth of your graphics is
-not enough". The charts before this drew data and nothing else. The published
-decks draw data **and the reader's route through it**.
+A chart that draws data and nothing else is not enough. The published decks
+draw data **and the reader's route through it**.
 
 None of it is possible without knowing where the plot area sits inside the
 chart frame, and python-pptx does not expose that. So the engine stops guessing
@@ -518,8 +506,8 @@ The bundled sample deck is exported to `references/sample-slides/`.
 
 ## 11. Text overflow is invisible to a geometry check
 
-Added 25 August 2026, after a wrapped exhibit title printed its second line
-straight over its own basis line. `qa.gate_overlap` could not see it, because
+A wrapped exhibit title prints its second line straight over its own basis
+line, and `qa.gate_overlap` cannot see it, because
 **the shape rectangles did not overlap**: the text overflowed its rectangle and
 printed on top of whatever sat beneath. Only estimating the wrap catches it.
 
@@ -552,7 +540,7 @@ rather than assuming it, so the two cannot drift.
 
 ## 12. Long series: pin the plot, blank the labels
 
-Added 25 August 2026, off a deck carrying a 50-week and a 20-quarter series.
+Measured off a deck carrying a 50-week and a 20-quarter series.
 
 **Pin the plot area on any chart with many categories.** Left to itself the
 renderer is free to squeeze the plot into the top of its own frame and leave a

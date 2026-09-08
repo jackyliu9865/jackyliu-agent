@@ -2,13 +2,12 @@
 type: deck-profile
 deck_type: report
 variants: [client, publication]
-last_updated: 2026-08-28
 status: draft — awaiting sign-off
 ---
 
 # Deck profile — Report
 
-Read [[START-HERE]] first. This file covers what is specific to a report.
+Read [[SKILL|the pipeline]] first. This file covers what is specific to a report.
 
 A report is read without a presenter, months after it was written, by someone who
 was not in the room. It carries its own argument. That is the whole reason it is
@@ -123,13 +122,13 @@ drafted.
 
 ## Before you call it done
 
-The seven checks in `../design/references/design-principles.md` §7, then the QA pass in `../design/SKILL.md`.
+The seven checks in `../design/references/design-principles.md` §7, then the QA pass in `../design/references/qa-checklist.md`.
 Steps 4 and 5 are blocked on this machine; see [[environment]] and say so in
 the delivery note.
 
 ## Related
 
-- [[START-HERE]]
+- [[SKILL|the pipeline]]
 - [[environment]]
 - [[Proposal]]
 - [[Talkbook]]

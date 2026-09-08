@@ -1,16 +1,13 @@
 ---
 tags: [note, skills, kpmg-deck, design]
-date: 2026-08-21
-last_updated: 2026-08-21
 ---
 
 # Slide design principles
 
-Written 21 August 2026. The review note was that the skill lacks the ability to
-design, and that what it needs is the concept of an artboard, gridlines, worked
-examples of what good looks like, minimal text, high visual density, and clarity.
+Composition: the artboard, the grid, worked examples of what good looks like,
+minimal text, high visual density, clarity.
 
-**Read this before laying out a slide, not after.** `brand.md` says what colour and
+**Read this before laying out a slide.** `brand.md` says what colour and
 what size. `layouts.md` says which placeholders exist. This says how to compose.
 
 ---

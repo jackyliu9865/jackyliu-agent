@@ -2,15 +2,25 @@
 type: house-file
 purpose: routes a deck type to its slide master
 applies_to: Report, Proposal, Talkbook
-last_updated: 2026-09-08
 ---
 
 # Layout — which master for which deck
 
-Read [[START-HERE]] first. This file answers one question: **which slide master
+Read [[SKILL|the pipeline]] first. This file answers one question: **which slide master
 does this deck type build on.**
 
 ## Routing
+
+**This table is enforced.** `deckkit.DECK_TYPES` holds it in code, and three
+gates in `qa` check it: the deck opens on `Cover page`, ends on its own back
+cover, and carries no other type's back cover anywhere. Declare the type when
+you open the deck:
+
+```python
+prs = new_deck(kind="report")   # report | publication | proposal | talkbook
+```
+
+Leaving `kind` out skips those three gates and says so in the QA report.
 
 | Deck type | Master | Build call | Closer |
 |---|---|---|---|
@@ -22,8 +32,8 @@ does this deck type build on.**
 ## The trap: never build from the specimen
 
 `assets/specimen-deck.pptx` and `assets/template.pptx` carry the **same master**.
-Verified 31 August 2026 by comparing both layout sets: 32 layouts each, identical
-names, no difference either way. The specimen is that master with 28 demonstration
+Both layout sets were compared: 32 layouts each, identical names, no difference
+either way. The specimen is that master with 28 demonstration
 slides on it; the template is that master cleaned to zero slides.
 
 **Open the template, never the specimen.** `new_deck()` already does this.
@@ -77,7 +87,7 @@ report being presented. Say that rather than calling it a talkbook. See
 
 ## Related
 
-- [[START-HERE]]
+- [[SKILL|the pipeline]]
 - [[Report]]
 - [[Proposal]]
 - [[Talkbook]]

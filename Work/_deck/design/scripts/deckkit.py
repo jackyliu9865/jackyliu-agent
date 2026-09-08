@@ -100,9 +100,39 @@ BODY_FONT = "Arial"
 TITLE_FONT = "KPMG Bold"
 
 
-def new_deck(template=TEMPLATE):
+# ---------------------------------------------------------------- deck types
+# What actually varies by deck type on this master. Measured, not assumed: the
+# master splits by type in two places only, the back cover and the front matter.
+# Grid, type scale and palette are identical across all four, which is why there
+# is no margin or size entry here.
+DECK_TYPES = {
+    "report":      {"closer": "Back Cover_Report",
+                    "label":  "client report"},
+    "publication": {"closer": "Back Cover_Publications",
+                    "label":  "publication"},
+    "proposal":    {"closer": "Back Cover_Proposal",
+                    "label":  "proposal"},
+    "talkbook":    {"closer": None,
+                    "label":  "talkbook (no closer on this master)"},
+}
+
+# Every back cover the master carries. A deck may use its own and no other.
+ALL_CLOSERS = {v["closer"] for v in DECK_TYPES.values() if v["closer"]}
+
+
+def deck_kind(prs):
+    """The kind stamped by new_deck(kind=...), or None if it was not declared."""
+    return getattr(prs, "_deck_kind", None)
+
+
+def new_deck(template=TEMPLATE, kind=None):
     """Open the bundled template: 32 layouts, both masters, theme, logo,
     footers and think-cell hooks intact, and zero slides.
+
+    `kind` is one of DECK_TYPES: "report", "publication", "proposal",
+    "talkbook". Declaring it turns on the deck-type gates in `qa`, which check
+    the closer and reject another type's back cover. Leaving it None skips
+    those gates and says so in the report.
 
     Don't substitute the specimen deck here. Its 28 sample slides hyperlink to
     each other, so deleting them at runtime leaves orphans that collide with the
@@ -119,7 +149,12 @@ def new_deck(template=TEMPLATE):
         _fonts.ensure_installed()
     except Exception:
         pass
-    return Presentation(template)
+    if kind is not None and kind not in DECK_TYPES:
+        raise ValueError("kind must be one of %s, got %r"
+                         % (sorted(DECK_TYPES), kind))
+    prs = Presentation(template)
+    prs._deck_kind = kind
+    return prs
 
 
 def layout(prs, name):
