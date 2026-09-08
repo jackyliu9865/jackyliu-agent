@@ -1,6 +1,6 @@
 ---
 type: environment
-last_checked: 2026-09-01
+last_checked: 2026-09-08
 ---
 
 # Deck build environment
@@ -93,15 +93,16 @@ brew install --cask libreoffice && brew install poppler
 LibreOffice can also be installed from its own `.dmg` without Homebrew, which
 covers step 4 and step 5 needs `poppler` separately.
 
-## Known defect in the skill
+## Fixed in the local fork
 
-`doctor.py` prints `pip3 install --user pptx` for the missing dependency. The
-package is **`python-pptx`**; `pptx` is a different project on PyPI. The
-name-mapping dict at `design/scripts/doctor.py:54` translates `docx` and misses
-`pptx`. `SKILL.md` has it right.
+`doctor.py` printed `pip3 install --user pptx` for the missing dependency, and
+the package is **`python-pptx`** — `pptx` is a different project on PyPI. The
+name-mapping dict at `design/scripts/doctor.py:54` handled `docx` and missed
+`pptx`.
 
-Left unpatched on purpose: `design/` is imported and never edited, so a local fix
-would be lost on the next import. Follow `SKILL.md` instead.
+**Patched 8 September 2026.** `design/` is a local fork now, so it was fixed in
+place rather than worked around. Recorded in the house-changes table in
+[[START-HERE]] so an upstream merge conflict is recognisable.
 
 ## Related
 

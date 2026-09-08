@@ -1,156 +1,198 @@
 ---
 type: entry-point
 applies_to: every PowerPoint task
-last_updated: 2026-08-30
+last_updated: 2026-09-08
 ---
 
 # Decks — start here
 
-**Any PowerPoint task starts at this file.** It routes you. It contains no brand
-values and no build instructions, because those live in `design/` and restating
-them here would create a second source that drifts.
+**Any PowerPoint task starts here.** The job is one thing: turn supplied content
+into a coherent deck. Follow the six steps in order. Do not skip ahead.
 
-## Precedence
+---
 
-**Where this file and `design/` disagree, this file wins.** `design/` is an
-imported package written for a different house; its rules are the default, and
-the overrides recorded here are standing. Recorded overrides:
+## The pipeline
 
-| `design/` says | This file says |
+### 1. Read the input
+
+| Input | How to read it |
 |---|---|
-| `design-principles.md` §6: never cite KPMG's own thought leadership in a client-facing deliverable, "not negotiable" | **Cite it.** A KPMG published report is a legitimate source for its own data. See *Sources and citation* below |
-| `visual-reference/`: the 38 pages are private work product, restricted | Use them freely for every deck. The restriction on publishing them outward stands under §7 of `AGENTS.md`, which already covers it |
+| `.md`, `.txt` | Read directly |
+| `.docx`, `.pdf`, `.pptx` | `python3 design/scripts/source_text.py <file> --notes > source.txt` |
 
-Never patch `design/` to close a disagreement. Record the override here instead,
-because the package can be replaced wholesale by a newer version and a local edit
-would be lost.
+**Read the notes it prints.** Words baked into an image are pixels and do not
+extract. Transcribe those by hand under a heading saying where they came from.
 
-**House files kept inside `design/`.** These are yours and a re-import deletes
-them. Restore from the vault afterwards.
+**The supplied content is the content.** Use its words. Do not improve a
+sentence, invent a finding, expand an acronym it abbreviated, or research the
+topic to add more. If the content does not say something a slide needs, **ask**.
 
-| File | Holds |
-|---|---|
-| `design/layout.md` | Which slide master each deck type builds on |
+The operative rules — what counts as a legal shortening, why deleting mid-sentence
+is refused, how names are handled — are in
+`design/references/content-rules.md`. Read it before drafting.
 
-## How this folder is split
+→ *Exit: every word that will appear on a slide exists in the source.*
 
-**Who owns it** decides where a fact belongs.
+### 2. Confirm purpose and audience → pick the template
 
-| | `design/` | `Report/` `Proposal/` `Talkbook/` |
+**Ask the user. Do not assume.**
+
+- What is this deck for?
+- Who reads it, and are they in the room or reading it alone?
+
+| Purpose | Folder | Template |
 |---|---|---|
-| Scope | Design and build, every deck type | One deck type |
-| Owner | Imported package. Replaceable wholesale | Yours |
-| Edit it? | **Never.** Edits are lost on the next import | Yes |
-| Holds | Brand, type, grid, layouts, composition rules, exhibit grammar, house style, QA gates, the build API, the master, the nine fonts, 38 rendered reference pages | Section skeleton, layout repertoire, density, default mode, and any master or sample for that one type |
-| Answers | *How does a KPMG slide work?* | *What does a Jacky report look like?* |
+| Client deliverable, read without a presenter | `Report/` | [[Report]] |
+| Published thought leadership | `Report/` | [[Report]], publication variant |
+| Sells an engagement | `Proposal/` | [[Proposal]] — **not written, ask** |
+| Presented live | `Talkbook/` | [[Talkbook]] — **blocked, ask** |
 
-A value that exists in `design/` is **cited**, never copied. House decisions that
-apply to every deck type go in **this file**, under *Precedence* or the sections
-below.
+Read the lead file for the chosen type before going on. Where it says *not
+written*, stop and ask rather than borrowing another type in silence.
 
-**One folder per deck type**, each with a lead file of the same name as its entry
-point. Anything specific to that type lives in its folder: its own master, sample
-decks, worked examples, boilerplate.
+→ *Exit: the user has confirmed purpose, audience and template.*
 
-## Reading order for a deck task
+### 3. Agree the length and the outline
 
-Read in this order. Stop when you have what the task needs.
+**Ask for a target slide count.** Then write the outline: a numbered list, one
+line per slide stating **the message of that slide**.
 
-| # | Read | When |
-|---|---|---|
-| 1 | `AGENTS.md` (vault root) | Always. Loaded automatically |
-| 2 | **This file** | Always |
-| 3 | [[slide-template]] | Always, before opening any file. Which master this deck type builds on |
-| 4 | `<Type>/<Type>.md` — the lead file in `Report/`, `Proposal/` or `Talkbook/` | Always, once the type is chosen. Read the whole folder if it holds more |
-| 5 | `design/references/visual-reference/` | Always, before laying out a data slide. **Look at the pages**, do not only read the index |
-| 6 | `design/references/design-principles.md` | Always. How to compose a slide, and the seven checks |
-| 7 | `design/references/exhibits.md` | Before any slide carrying a number |
-| 8 | `design/references/layouts.md` | When choosing a layout or hand-placing on one |
-| 9 | `design/references/brand.md` | Before writing any colour or size literal |
-| 10 | `design/references/house-style-qrg.md` | Before any client-facing wording |
-| 11 | `design/SKILL.md` | For the build API and the five-step QA pass |
-| 12 | `environment.md` | Before claiming any QA step passed |
+**Stop. Show the outline. Wait for an explicit go.**
 
-## Two things to declare before building
+Structural problems cost minutes here and hours after the build.
 
-**1. The mode.** Rule 0 of `design/SKILL.md`, and it changes what the job is.
+→ *Exit: the user has said go on the outline.*
 
-| | Mode A | Mode B |
-|---|---|---|
-| Trigger | A document was supplied | A topic or a brief |
-| The job | Layout. The thinking is done | Research first, then layout |
-| Words | The document's, word for word | Yours, every claim sourced |
-| Gate | `qa.content_fidelity(..., mode="verbatim")` returns zero | Verified data register, `databooklet.check_booklet()` clean |
+### 4. One planning file per slide
 
-**2. The deck type.** Then go to that folder and read its lead file.
+Write `plan/01-<slug>.md` … `plan/NN-<slug>.md` in the engagement folder. One
+file per slide, each carrying:
 
-| Deck | Folder | Lead file | Back cover | State |
-|---|---|---|---|---|
-| Client deliverable, read without a presenter | `Report/` | [[Report]] | `Back Cover_Report` | Drafted |
-| Published thought leadership | `Report/` | [[Report]], publication variant | `Back Cover_Publications` | Drafted |
-| Sells an engagement | `Proposal/` | [[Proposal]] | `Back Cover_Proposal` | **Not written** |
-| Presented live | `Talkbook/` | [[Talkbook]] | Undecided | **Blocked**, awaiting a layout |
+```markdown
+# Slide 07 — <the message, as a sentence>
 
-Say both out loud before the first slide. Where the lead file says *not written*,
-stop and ask rather than borrowing another type in silence.
+**Message.** The one assertion this slide makes. If there are two, split it.
+**Layout.** The named master layout, from design/references/layouts.md
+**Composition.** Where things sit: exhibit left 13.70, read right at 17.43, etc.
+**Content.** The text for each placeholder, taken from the source.
+**Exhibit.** Chart type, series, basis line, and the source of the numbers.
+**Icons / graphics.** What and why, or "none".
+```
 
-## The two gates
+Build one representative slide from its plan, show it, and wait for a go before
+building the rest. Never the cover, which hides layout problems.
 
-From §5 of `AGENTS.md`. Both apply to every deck.
+→ *Exit: every slide has a plan file, and one built slide is approved.*
 
-1. **Outline gate.** Storyline and a numbered slide list, one line stating the
-   message of each slide. Stop. Wait for an explicit go.
-2. **Slice gate.** One representative body slide, built and rendered. Never the
-   cover, which hides layout problems. Stop. Wait for an explicit go.
+### 5. One build file for the deck
 
-No layout is invented after the slice gate. A slide that will not fit an approved
-layout comes back to the user.
+Consolidate the plans into `deck.md`: the whole deck in order, slide by slide,
+with the exact layout name and the exact placeholder content. This is the single
+spec the build script is written from.
 
-## Where output goes
+Then write and run the build script per `design/references/build-api.md`.
+`deckkit` for placeholders, `exhibits.chart_exhibit()` for anything with a
+number.
+
+→ *Exit: `save()` returns without raising.*
+
+### 6. Coherence check before delivery
+
+**The failure this step exists to catch is a set of correct slides that is not a
+deck.** Run all of it:
+
+- **Does it argue one thing?** Read the titles alone, top to bottom. They should
+  read as a single argument. If they read as a list of topics, the deck is
+  scattered.
+- **Does each slide follow from the last?** A slide that could sit anywhere
+  belongs nowhere.
+- **Is the layout varied?** Every slide on one layout wastes the template.
+- **Is anything said twice?** Merge it.
+- **Is anything missing between two slides?** The reader should never have to
+  make a leap the deck did not make.
+- **Do the section dividers mark acts in the argument**, rather than chapter
+  headings?
+- **QA**, per `design/references/qa-checklist.md`: `qa.report()`,
+  `scan_text.py`, `validate_pptx.py`, and `qa.content_fidelity()` returning
+  zero.
+- **The seven per-slide checks** in `design/references/design-principles.md` §7.
+
+→ *Exit: the deck reads as one document, and every check that can run has run.*
+
+---
+
+## Where things go
 
 | Item | Path |
 |---|---|
-| The deck | `Work/<Engagement>/` |
-| Data booklet (`.xlsx`) | Beside the deck. A deck ships as two files |
-| Figure traces, renders, extraction records | `Work/<Engagement>/evidence/` |
-| Mode B research | `Work/<Engagement>/Research/` |
+| Extracted source | `Work/<Engagement>/source.txt` |
+| Per-slide plans | `Work/<Engagement>/plan/` |
+| Build spec and script | `Work/<Engagement>/deck.md`, `build.py` |
+| The deck and its data booklet | `Work/<Engagement>/` — a deck ships as two files |
+| Figure traces and renders | `Work/<Engagement>/evidence/` |
 | Session note | `Sessions/YYYY-MM-DD <slug>.md`, opened at the start |
 
-Use the engagement code name in the folder and the file name where one exists.
-`save()` takes a path relative to the project folder, never a machine-absolute
-one.
+Use the engagement code name where one exists. `save()` takes a path relative to
+the project folder.
+
+## Reference, when you need it
+
+Read the file that answers the question in front of you.
+
+| Question | File |
+|---|---|
+| What a finished page looks like | `design/references/visual-reference/` — **look at the pages** |
+| How to compose a slide | `design/references/design-principles.md` |
+| Which layout, which placeholder idx | `design/references/layouts.md` |
+| Anything carrying a number | `design/references/exhibits.md` |
+| A colour or size literal | `design/references/brand.md` |
+| What the words may be, and how to prove it | `design/references/content-rules.md` |
+| Writing the build script | `design/references/build-api.md` |
+| Wording and punctuation | `design/references/house-style-qrg.md` |
+| The QA pass and what each gate fails on | `design/references/qa-checklist.md` |
+| Where everything in the package lives | `design/SKILL.md` |
+| What works on this Mac | [[environment]] |
+| Which master each deck type uses | [[slide-template]] |
+
+## The package is a local fork
+
+`design/` started as the imported `kpmg-deck` package and is now **edited in
+place**, version-controlled with the vault. Fix things there directly rather than
+recording an override somewhere else.
+
+The unmodified import is tagged **`kpmg-deck-pristine`**. To take an upstream
+update:
+
+```bash
+git checkout -b upstream kpmg-deck-pristine
+```
+
+Drop the new package into `Work/_deck/design/`, commit, then merge into `main`.
+Git resolves everything upstream changed that was not touched here, and raises a
+conflict only where both moved.
+
+**House changes made so far**, so a merge conflict is recognisable:
+
+| Change | Why |
+|---|---|
+| `SKILL.md` cut from 527 lines to a map | Its workflow and reference index competed with this file |
+| `references/content-rules.md`, `references/build-api.md` added | The content and API rules extracted out of `SKILL.md` |
+| `scripts/doctor.py:54` | Printed `pip3 install --user pptx`; the package is `python-pptx` |
+| `design/slide-template.md` added | Which master each deck type builds on |
+| Cite KPMG's own thought leadership | `design-principles.md` §6 forbids it. It is a legitimate source for its own data |
+| Use the 38 reference pages freely | `visual-reference/` marks them restricted |
 
 ## Sources and citation
 
-§7 of `AGENTS.md` governs confidentiality. This section governs what may be used
-and what may be named.
-
-**Use everything in `design/` freely.** The 38 rendered reference pages, the
-specimen deck, the master and the nine fonts exist to make the output better, and
-the agent draws on all of them without restriction and without asking. Look at
-the reference pages before every data slide.
-
-| Source | Use for analysis | Name it in the deck |
+| Source | Analysis | Name it in the deck |
 |---|---|---|
-| KPMG published reports and thought leadership | Yes | **Yes.** Cite it like any other publication |
-| Competitor consultancy output | **Yes**, for background and for craft | No |
-| Primary, government, agency, regulator, filings | Yes | Yes. Preferred |
-| Vendor blogs summarising a primary source | Read, then go to the primary | Cite the primary instead |
+| KPMG publications | Yes | Yes |
+| Competitor consultancy output | Yes, background and craft | No |
+| Primary, government, regulator, filings | Yes | Yes, preferred |
 
-One craft point on the first row. A KPMG publication is a sound source for its
-own data, and it is weak as independent corroboration of a KPMG claim. Where a
-government or regulator series says the same thing, cite that as well.
-
-## Where the package is
-
-`Work/_deck/design/` is the canonical copy of the `kpmg-deck` package.
-`~/.claude/skills/kpmg-deck` is a symlink to it, so Claude Code finds it and
-there is one copy to maintain.
+Use everything in `design/` freely — reference pages, specimen, master, fonts.
 
 ## Related
 
-- [[slide-template]]
-- [[Report]]
-- [[Proposal]]
-- [[Talkbook]]
-- [[environment]]
+- [[Report]] · [[Proposal]] · [[Talkbook]]
+- [[slide-template]] · [[environment]]

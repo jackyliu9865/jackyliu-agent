@@ -232,8 +232,8 @@ At session end, set `status`, add `ended`, and fill `## Outcome`.
 ## Deck and report production
 
 **Any PowerPoint task starts at `Work/_deck/START-HERE.md`.** It carries the
-reading order, the deck-type routing and the two gates. Read it before the first
-slide, whatever the ask.
+six-step pipeline from supplied content to a finished deck. Read it before the
+first slide, whatever the ask.
 
 - KPMG-branded decks use the `kpmg-deck` skill, which carries the 2025 brand
   master, the locked palette and the type scale. Do not hand-build a KPMG deck.

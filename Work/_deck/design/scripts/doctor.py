@@ -51,7 +51,7 @@ def check_module(name, required, why):
         return True
     except ImportError:
         _line(BAD if required else WARN, name,
-              "%s  (pip3 install --user %s)" % (why, {"docx": "python-docx"}.get(name, name)))
+              "%s  (pip3 install --user %s)" % (why, {"docx": "python-docx", "pptx": "python-pptx"}.get(name, name)))
         return not required
 
 

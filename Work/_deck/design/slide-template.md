@@ -2,18 +2,13 @@
 type: house-file
 purpose: routes a deck type to its slide master
 applies_to: Report, Proposal, Talkbook
-last_updated: 2026-08-31
+last_updated: 2026-09-08
 ---
 
 # Layout — which master for which deck
 
 Read [[START-HERE]] first. This file answers one question: **which slide master
 does this deck type build on.**
-
-> **House file inside an imported package.** Everything else in `design/` is the
-> `kpmg-deck` package and is replaced wholesale on a re-import. This file is not.
-> Re-import restores it from the vault, per the modifications list in
-> [[START-HERE]].
 
 ## Routing
 
