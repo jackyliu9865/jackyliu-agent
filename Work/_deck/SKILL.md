@@ -47,7 +47,7 @@ mid-sentence is refused, how names are handled — are in
 |---|---|---|---|
 | Client deliverable, read without a presenter | `Report/` | [[Report]] | `report` |
 | Published thought leadership | `Report/` | [[Report]], publication variant | `publication` |
-| Sells an engagement | `Proposal/` | [[Proposal]] — **not written, ask** | `proposal` |
+| Sells an engagement | `Proposal/` | [[Proposal]], routing to `sections/` | `proposal` |
 | Presented live | `Talkbook/` | [[Talkbook]] — **blocked, ask** | `talkbook` |
 
 Read the lead file for the chosen type before going on. Where it says *not
@@ -57,8 +57,10 @@ written*, stop and ask rather than borrowing another type in silence.
 
 ### 3. Agree the length and the outline
 
-**Ask for a target slide count.** Then write the outline: a numbered list, one
-line per slide stating **the message of that slide**.
+**Ask for a target slide count.** For a proposal, first ask which sections to
+include from the list in [[Proposal]] — every section is optional. Then write
+the outline: a numbered list, one line per slide stating **the message of that
+slide**.
 
 **Stop. Show the outline. Wait for an explicit go.**
 
@@ -190,6 +192,7 @@ conflict only where both moved.
 | `references/*.md` — dated provenance notes stripped | House note dates carried no information the rule did not |
 | `scripts/deckkit.py` — `DECK_TYPES`, `new_deck(kind=...)` | Per-type closers made machine-readable |
 | `scripts/qa.py` — three deck-type gates | Cover, closer, and no foreign back cover |
+| `references/build-api.md` — x/y/w/h positioning convention | House standard for stating shape geometry |
 | `scripts/doctor.py:54` | Printed `pip3 install --user pptx`; the package is `python-pptx` |
 | Cite KPMG's own thought leadership | `design-principles.md` §6 forbids it. It is a legitimate source for its own data |
 | Use the 38 reference pages freely | `visual-reference/` marks them restricted |

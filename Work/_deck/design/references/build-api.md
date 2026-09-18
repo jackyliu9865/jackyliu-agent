@@ -128,6 +128,20 @@ brand by hand: Arial, 9pt body and 8pt in tables, palette fills, zero cell and
 text insets, and stay inside the grid columns in `brand.md`. Charts go in as
 native PowerPoint charts with `CHART_SERIES` colours in order.
 
+**State every position as x, y from the top-left corner, then width × height,
+in centimetres.** House convention, for every deck and every note about one. x
+and y are the shape's top-left corner measured from the slide's top-left corner;
+w and h are its size. Never describe a shape by its centre, its right edge or
+its distance from the bottom.
+
+```
+| Element | x | y | w | h |
+|---|---|---|---|---|
+| Photo   | 2.73 | 3.73 | 2.70 | 3.60 |
+```
+
+Where a height follows its content, write `content` rather than a number.
+
 **Place them in centimetres.** `deckkit` exports `CM` (alias of `pptx.util.Cm`)
 and `GRID`, a dict of every guide in cm, so a shape on the second column of a
 two-column split is `CM(GRID["col2_x"])` rather than a retyped inch literal.

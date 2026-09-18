@@ -1,6 +1,6 @@
 ---
 type: environment
-last_checked: 2026-09-08
+last_checked: 2026-09-09
 ---
 
 # Deck build environment
@@ -12,7 +12,7 @@ re-run `python3 design/scripts/doctor.py` if it is stale.
 
 | Piece | Version | For |
 |---|---|---|
-| Python | 3.9.6, stock macOS | Everything |
+| Python | **Two interpreters.** Homebrew's 3.14.7 at `/usr/local/bin/python3` is first on `PATH`; stock 3.9.6 at `/usr/bin/python3` | Everything. Both carry the five packages and both pass the selftest |
 | `python-pptx` | 1.0.2 | The build. Nothing works without it |
 | `openpyxl` | 3.1.5 | The data booklet |
 | `python-docx` | 1.2.0 | Mode A reading a `.docx` source |
@@ -21,6 +21,24 @@ re-run `python3 design/scripts/doctor.py` if it is stale.
 | Fonts | 9 faces, registered | `KPMG` and `KPMG Logo` families live. See below |
 
 `doctor.py` reports **ready to build**.
+
+### Python — two interpreters, both working
+
+Installing Homebrew brought in Python 3.14.7, which now shadows the stock 3.9.6
+the packages were first installed into. For a day, plain `python3 build.py`
+failed with `No module named 'pptx'`.
+
+Fixed by installing the five packages into Homebrew's Python as well. PEP 668
+blocks a plain `pip install` there, so the sanctioned user-site override was
+used:
+
+```bash
+/usr/local/bin/python3 -m pip install --user --break-system-packages python-pptx openpyxl python-docx pypdf pymupdf
+```
+
+The package selftest passes **0 findings across 27 gates on 3.14.7**, so the
+newer interpreter is safe to build on. `/usr/bin/python3` still works as a
+fallback.
 
 ### Fonts — resolved
 
@@ -64,39 +82,59 @@ and a listing cannot see registration or quarantine. It reported
 `assets/fonts (bundled) 9 faces` and `ready to build` throughout, while every
 title rendered in Helvetica. Trust a resolution probe, never the listing.
 
-## Blocked
+## Render and visual check — working
 
-**QA steps 4 and 5 cannot run.** They need `soffice` and `pdftoppm`. Neither is
-installed, and there is no Homebrew on this Mac.
+| Piece | State |
+|---|---|
+| Homebrew | `/usr/local/bin/brew` |
+| LibreOffice | 26.8.0.3, `/usr/local/bin/soffice` |
+| PyMuPDF | 1.26.5, the `pdftoppm` substitute |
+| `pdftoppm` | **Absent.** poppler did not install |
 
-| Step | What it does | Consequence of the gap |
-|---|---|---|
-| 4 | Converts to PDF and reads the embedded fonts | Cannot prove titles rendered in KPMG Bold rather than Arial |
-| 5 | Rasterises every page to JPG | Cannot look at any page. `check()` sees geometry, never composition |
-
-**§4 of `AGENTS.md` forbids reporting a check that did not run.** Until these are
-installed, every deck ships with the gap stated in the delivery note. Steps 1 to
-3 do run and still gate the build:
-
-- `qa.report()` — structural, brand and house style, in-process. `save()` raises
-  on a finding
-- `scan_text.py` — every string, as a separate gate
-- `validate_pptx.py` — parts, relationships, layouts, masters
-
-### The fix
-
-Installing needs an administrator password, so it is yours to run.
+**QA step 4 passes.** The template deck embeds `KPMG-Bold` three times alongside
+the Arial faces, so the font resolves end to end.
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+soffice --headless --convert-to pdf deck.pptx --outdir .
 ```
 
 ```bash
-brew install --cask libreoffice && brew install poppler
+python3 -c "import re,io;print(sorted(set(re.findall(rb'/BaseFont\s*/([A-Za-z0-9+#,\-_]+)', io.open('deck.pdf','rb').read()))))"
 ```
 
-LibreOffice can also be installed from its own `.dmg` without Homebrew, which
-covers step 4 and step 5 needs `poppler` separately.
+**QA step 5 runs through PyMuPDF** rather than `pdftoppm`. No patch to the
+package was needed; call it directly:
+
+```python
+import fitz
+for i, page in enumerate(fitz.open("deck.pdf"), 1):
+    page.get_pixmap(dpi=110).save("evidence/page-%02d.png" % i)
+```
+
+To restore the documented `pdftoppm` path instead:
+
+```bash
+brew install poppler
+```
+
+**LibreOffice's first headless run is slow.** It builds a user profile and can
+take minutes, which looks like a hang. It is warm afterwards. Give any first
+`soffice` call a long timeout.
+
+**Icons now work.** `icons.place()` needs LibreOffice for the raster fallback and
+no longer raises.
+
+### What the render pass immediately caught
+
+The gates cannot see composition, and the first look at the template deck found
+two defects that all 27 gates passed:
+
+- **Empty grey boxes** beside each recommendation strip on `Key findings_2
+  columns` — placeholders idx 52 and 73, never filled and never dropped
+- **Content stops around y 4.5 cm** on the findings and exhibit pages, well above
+  the master's half-height line at 10.13. `design-principles.md` §7 check 7 fails
+
+This is why §4 of `AGENTS.md` requires a render and a read.
 
 ## Fixed in the local fork
 
