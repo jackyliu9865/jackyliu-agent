@@ -1,0 +1,32 @@
+{
+  "profile": "A Person",
+  "as_of": "2026-03-31",
+  "period_from": "2026-01-01",
+  "holdings_source": "Example broker asset certificate",
+  "transactions_source": "Example broker transaction detail",
+  "holdings": [
+    {"ticker": "000111", "name": "EXAMPLE EQUITY FUND A", "units": 1000.0, "nav": 1.25, "value": 1250.0},
+    {"ticker": "000222", "name": "EXAMPLE BOND FUND C", "units": 500.0, "nav": 2.0, "value": 1000.0},
+    {"ticker": "000333", "name": "EXAMPLE NEW PURCHASE FUND C", "units": 800.0, "nav": 1.1, "value": 880.0}
+  ],
+  "transactions": [
+    {"date": "2026/02/10", "type": "Buy", "ticker": "000333", "name": "EXAMPLE NEW PURCHASE FUND C", "amount": 900.0},
+    {"date": "2026/02/20", "type": "Sell", "ticker": "000444", "name": "EXAMPLE DISPOSED FUND A", "amount": 1500.0},
+    {"date": "2026/03/05", "type": "Buy", "ticker": "000111", "name": "EXAMPLE EQUITY FUND A", "amount": 300.0}
+  ],
+  "kics_snapshots": [
+    {
+      "label": "20260401",
+      "printed": "09:00 GMT 1 Apr 2026",
+      "source": "example_kics_export.pdf",
+      "rows": [
+        {"id": "000111", "name": "EXAMPLE EQUITY FUND A", "entry_type": "Fund", "acquired": "Jan-05-2025", "status": "", "profile": "A Person"},
+        {"id": "000222", "name": "EXAMPLE BOND FUND C", "entry_type": "Fund", "acquired": "Jan-05-2025", "status": "", "profile": "A Person"},
+        {"id": "000444", "name": "EXAMPLE DISPOSED FUND A", "entry_type": "Fund", "acquired": "Jan-05-2025", "status": "", "profile": "A Person"},
+        {"id": "000555", "name": "EXAMPLE STALE DECLARATION FUND", "entry_type": "Fund", "acquired": "Jan-05-2025", "status": "", "profile": "A Person"},
+        {"id": "HK0194", "name": "EXAMPLE MPF SCHEME", "entry_type": "Fund", "acquired": "Oct-03-2022", "status": "", "profile": "Another Person"}
+      ]
+    }
+  ],
+  "databook_out": "example_check.xlsx"
+}

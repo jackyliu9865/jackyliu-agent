@@ -1,0 +1,39 @@
+{
+  "_comment": "Schema for reconcile.py / build_databook.py. Delete the _comment keys in real inputs. Every ticker is a STRING: keep leading zeros.",
+
+  "profile": "Name as it appears in the KICS Profile column. Used to filter multi-profile exports.",
+  "as_of": "2026-09-14  (cut-off date of the holding statement)",
+  "period_from": "2026-07-01  (start of the transaction records; should equal last_checked from state/last_check.json)",
+
+  "holdings_source": "Document reference, e.g. 'Ant Fund asset certificate 20260914211705716'",
+  "transactions_source": "Document reference, e.g. 'Ant Fund transaction detail 20260914211750546'",
+
+  "holdings": [
+    {"ticker": "000217", "name": "Fund name as shown on the statement", "units": 1884.93, "nav": 3.138, "value": 5914.34}
+  ],
+
+  "transactions": [
+    {"date": "2026/08/25", "type": "Buy / Sell / Dividend as shown", "ticker": "012943", "name": "Fund name", "amount": 9988.0}
+  ],
+
+  "kics_snapshots": [
+    {
+      "_comment": "Oldest first. The LAST entry is the current export and drives every conclusion; earlier ones become the superseded tabs.",
+      "label": "20260915 AM",
+      "printed": "01:58 GMT 15 Sep 2026",
+      "source": "KICS_20260915_10AM.pdf",
+      "rows": [
+        {"id": "001617", "name": "TIANHONG CSI ELECTRONICS INDEX FUND A", "entry_type": "Fund", "acquired": "Nov-21-2025", "status": "Self-cleared", "profile": "A Person"}
+      ]
+    }
+  ],
+
+  "expected_after_last_check": {
+    "_comment": "Round 2 only. Copy from state/last_check.json so the movement check knows what was asked for.",
+    "add": ["019898"],
+    "remove": ["005795", "021000"]
+  },
+
+  "prior_databook": "Investment_check.xlsx  (optional; previous periods roll below the Archive>> divider)",
+  "databook_out": "Investment_check.xlsx"
+}
